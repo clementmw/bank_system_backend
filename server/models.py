@@ -64,6 +64,10 @@ class User(db.Model,SerializerMixin):
             'accounts': [account.serialize() for account in self.accounts],
             'transactions': [transaction.serialize() for transaction in self.transactions]
         }
+    
+    def __repr__ (self):
+        return f"ID:{self.id} FirstName:{self.firstName}, LastName:{self.lastName},  Username:{self.username},  Email:{self.email}, Phone Number:{self.phone}"
+
 
 class Account(db.Model,SerializerMixin):
     __tablename__ = 'accounts'
@@ -125,9 +129,6 @@ class Transaction(db.Model,SerializerMixin):
             "updated_at": self.updated_at,
         }
 
-        
-
- 
 class Reviews(db.Model,SerializerMixin):
     __tablename__ = 'reviews'
 
