@@ -28,6 +28,7 @@ flask-bcrypt = "*"
 flask-jwt-extended = "*"
 flask-mail = "*"
 requests = "*"
+flask-admin = "*"
 
 [dev-packages]
 
