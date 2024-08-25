@@ -17,6 +17,9 @@ import requests
 from requests.auth import HTTPBasicAuth
 import base64
 import datetime
+from flask_admin import Admin
+from flask_admin.contrib.sqla import ModelView
+from views import UserAdminView,AccountAdminView,TransactionAdminView
 
 
 
@@ -27,9 +30,9 @@ app = Flask(
     template_folder='../client/build'
     )
 
+admin = Admin(app, name='My Admin Panel', template_mode='bootstrap4',url="/admin")
 
-
-app.config['JWT_SECRET_KEY'] = b'\xb2\xd3B\xb9 \xab\xc0By\x13\x10\x84\xb7M!\x11'
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = 24 * 60 * 60
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///bank.db'
 # app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URI') #render database url
@@ -37,15 +40,14 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAIL_SERVER'] = 'smtp.googlemail.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'evergreenbank7@gmail.com'
-app.config['MAIL_PASSWORD'] = 'hmnzrzeikmkwrsal'
-app.config['MAIL_DEFAULT_SENDER'] = 'evergreenbank7@gmail.com'
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER')
 
 
 app.json.compact = False
 
-# VALID_API_KEYS=os.environ.get("VALID_API_KEYS")
-VALID_API_KEYS='bc442b76-e188-48eb-9b4a-2bc6262448cf'
+VALID_API_KEYS=os.getenv ("VALID_API_KEYS")
 
 db.init_app(app)
 migrate = Migrate(app,db)
@@ -56,13 +58,18 @@ jwt = JWTManager()
 jwt.init_app(app)
 mail = Mail(app)
 
+# add the admin dashboard views
+admin.add_view(UserAdminView(User, db.session))
+admin.add_view(AccountAdminView(Account, db.session))
+admin.add_view(TransactionAdminView(Transaction, db.session))
+
 # to add them to .env
-consumer_key = "MXCHriSVDV4rw6YmmBEk1QaILShzTNxEW4iF159j6eqEAoYg"
-cunsumer_secret = "Laf6Sqtfts9VsWY42coghyrSyp578XyRsPZVfze7iuSAqH7yEYZH8liJsd0SGEib"
+consumer_key=os.getenv('CONSUMER_KEY')
+cunsumer_secret=os.getenv('CONSUMER_SECRET')
 
 
 app.register_blueprint(auth_bp, url_prefix='/v1.0/auth')
-app.register_blueprint(user_bp, url_prefix='/v1.0/user')
+# app.register_blueprint(user_bp, url_prefix='/v1.0/user')
 
 #additional claims
 @jwt.additional_claims_loader
@@ -373,7 +380,7 @@ api.add_resource(Generate_token, '/v1.0/generate_daraja_token')
 # function for generating password for mpesa express(stk push)
 def generate_password():
     short_code = "174379" ## to be changed depending with the business short code
-    passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"   #to be added on dotenv
+    passkey = os.getenv("PASSKEY")   #to be added on dotenv
     timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
 
     data_to_encode = short_code + passkey + timestamp
@@ -626,10 +633,11 @@ if __name__ == '__main__':
 
     # add role jwt -admin /admin
     # user -/user
-    # introduce flask admin,pdf
-    # introduce views
+    # introduce flask admin
+    # pdf
+    # introduce views **done**
     # introduce utility to handle mail
     # version control of api **done**
     # apikey headers **done**
     # add cloudinary to edit profile image
-    # integrate mpesa sdk for deposit 
+    # integrate mpesa sdk for deposit **done**
