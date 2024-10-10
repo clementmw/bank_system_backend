@@ -68,7 +68,7 @@ consumer_key=os.getenv('CONSUMER_KEY')
 cunsumer_secret=os.getenv('CONSUMER_SECRET')
 
 
-app.register_blueprint(auth_bp, url_prefix='/v1.0/auth')
+app.register_blueprint(auth_bp, url_prefix='api/v1.0/auth')
 # app.register_blueprint(user_bp, url_prefix='/v1.0/user')
 
 #additional claims
