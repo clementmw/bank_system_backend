@@ -1,0 +1,23 @@
+__pycache__
+*.py[cod]      
+*$py.class
+*.so
+.Python
+env/
+.env           
+venv/         
+.venv
+testenv
+staticfiles/
+tires.sqlite3
+product_images/
+migrations/
+
+
+.vscode/      
+.idea/        
+
+# Local development & testing
+instance/
+.pytest_cache/
+.coverage      
