@@ -9,7 +9,7 @@ venv/
 .venv
 testenv
 staticfiles/
-tires.sqlite3
+*.sqlite3
 product_images/
 migrations/
 
