@@ -61,7 +61,9 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'django_celery_beat',
-    'defender'
+    'defender',
+    'drf_yasg',
+    'schema_viewer',
 
 ]
 
@@ -168,7 +170,7 @@ MEDIA_URL = '/media/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = "app.User"  # register the User table that will act as a connection between the diffrent user
+AUTH_USER_MODEL = "auth_service.User"  # register the User table that will act as a connection between the diffrent user
 
 
 REST_FRAMEWORK = {
@@ -180,7 +182,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30), # in production update to 1 hr
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7), # in production update to 1 hr
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,  # Returns new refresh token on refresh
     'BLACKLIST_AFTER_ROTATION': True,
