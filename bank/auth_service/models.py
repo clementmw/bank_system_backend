@@ -197,7 +197,8 @@ class KycProfile(models.Model):
         ('PENDING', 'Pending'),
         ('VERIFIED', 'Verified'),
         ('REJECTED', 'Rejected'),
-        ('EXPIRED', 'Expired') 
+        ('EXPIRED', 'Expired'),
+        ('UPLOADED','Uploaded')
     }
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="kyc_profile")
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPE_CHOICES)

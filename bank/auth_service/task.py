@@ -15,3 +15,10 @@ def send_verification_email(user_id):
     print(verification_url)
 
 
+def send_onboarding_email(user_id):
+    pass
+
+def send_new_kyc(kyc_id):
+    pass
+
+
