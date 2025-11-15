@@ -5,14 +5,15 @@ from django.utils import timezone
 from datetime import timedelta
 from .utility import *
 from django.contrib.contenttypes.models import ContentType
+import secrets
 
 
 
 class Role(models.Model):
     ROLE_CHOICES = (
-        ('ADMIN', 'Admin'), #assumption it is the superadmin or system administrator
-        ('CUSTOMER', 'Customer'),
-        ('STAFF', 'Staff'),
+        ('ADMIN', 'ADMIN'), #assumption it is the superadmin or system administrator
+        ('CUSTOMER', 'CUSTOMER'),
+        ('STAFF', 'STAFF'),
 
     )
 
@@ -43,6 +44,8 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     otp = models.CharField(max_length=6, blank=True, null=True)
     otp_expiry = models.DateTimeField(blank=True, null=True)
+    email_verification_token = models.CharField(max_length=64, blank=True, null=True)
+    email_verification_expiry = models.DateTimeField(blank=True, null=True)
     password = models.CharField(max_length=128)  
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -68,6 +71,27 @@ class User(AbstractUser):
             return timezone.now() < self.otp_expiry + timedelta(minutes=3)
         return False
 
+    def generate_email_token(self):
+        """Generate token for email verification"""
+        token = secrets.token_hex(32)
+        self.email_verification_token = token
+        self.email_verification_expiry = timezone.now() + timedelta(hours=24)
+        self.save()
+        return token
+
+    def verify_email(self, token):
+        """Return True if token valid and email is verified"""
+        if (
+            self.email_verification_token == token and
+            timezone.now() < self.email_verification_expiry
+        ):
+            self.is_active = True
+            self.email_verification_token = None
+            self.email_verification_expiry = None
+            self.save()
+            return True
+        return False
+
 
     def __str__(self):
         return f"{self.first_name} - {self.role} - {self.last_name} - {self.email}"
@@ -89,10 +113,6 @@ class User(AbstractUser):
             ("process_kyc", "Can process KYC verification"),
         ]
     
-    @property
-    def has_role_permission(self, permission_codename):
-        """Check if user has permission through their role"""
-        return self.role.permissions.filter(codename=permission_codename).exists()
 
 class EmployeeProfile(models.Model):
     DEPARTMENT_CHOICES = (
@@ -109,7 +129,7 @@ class EmployeeProfile(models.Model):
     department = models.CharField(max_length=50, choices=DEPARTMENT_CHOICES)
     job_title = models.CharField(max_length=100)
     date_of_hire = models.DateField(null=True, blank=True)
-    phone_number = models.CharField(max_length=20, null=True, blank=True)
+    phone_number = models.CharField(max_length=20, unique=True)
     emergency_contact_name = models.CharField(max_length=100, null=True, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, null=True, blank=True)
     is_active_employee = models.BooleanField(default=True)
@@ -133,7 +153,8 @@ class EmployeeProfile(models.Model):
 class CustomerProfile(models.Model):
     user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='customer_profile')
     customer_id = models.CharField(max_length=20, unique=True)
-    phone_number = models.CharField(max_length=20)
+    phone_number = models.CharField(max_length=20, unique=True)
+    national_id = models.CharField(max_length=20, null=True,blank=True) #updated during kyc 
     address = models.TextField(blank=True, null=True)
     date_of_birth = models.DateField(null=True, blank=True)
     next_of_kin_name = models.CharField(max_length=100, null=True, blank=True)
