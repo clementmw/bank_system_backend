@@ -293,3 +293,13 @@ class handleLogoutView(APIView):
             )
         except Exception as e:
             return Response({"error":str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ForgetpasswordView(APIView):
+    pass
+
+class ConfirmOtpView(APIView):
+    pass
+
+class ResetPasswordView(APIView):
+    pass
