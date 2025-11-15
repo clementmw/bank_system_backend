@@ -1,0 +1,1 @@
+# handldes the swagger documentation of the auth_service app

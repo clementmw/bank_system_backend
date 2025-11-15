@@ -189,3 +189,5 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,  # Update last login time on login
     'REFRESH_TOKEN_GRACE_PERIOD':timedelta(hours=1) # grace period for refresh token
 }
+
+FRONTEND_URL = "localhost:3000"

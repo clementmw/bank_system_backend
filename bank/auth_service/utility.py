@@ -1,3 +1,9 @@
+import random
+import string
+import datetime
+import uuid
+
+
 def generate_otp():
     pass
 
@@ -5,10 +11,25 @@ def validate_password_strength(password):
     pass
 
 def generate_employee_id():
-    pass
+    year = datetime.datetime.now().year
+    id = f"EMP{year}" + str(uuid.uuid4())[:10].upper()
+
+    # print(id)
+    return id
 
 def generate_customer_id():
-    pass
+    year = datetime.datetime.now().year
+    id = f"CUST{year}" + str(uuid.uuid4())[:8].upper()
+
+    return id
+
+
 
 def generate_account_number():
     pass
+
+def generate_temporary_password(): 
+    characters = string.ascii_letters + string.digits
+    password = ''.join(random.choice(characters) for _ in range(10))
+    
+    return password
