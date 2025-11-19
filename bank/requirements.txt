@@ -11,7 +11,7 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
 cron_descriptor==2.0.6
 cryptography==46.0.3
-Django==5.2.3
+Django==5.2.8
 django-allauth==65.13.0
 django-celery-beat==2.8.1
 django-ckeditor-5==0.2.18
