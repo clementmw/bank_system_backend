@@ -27,7 +27,7 @@ idna==3.11
 kombu==5.5.4
 oauthlib==3.3.1
 packaging==25.0
-pillow==11.2.1
+pillow==11.3.0
 prompt_toolkit==3.0.52
 psycopg2-binary==2.9.10
 pycparser==2.23
