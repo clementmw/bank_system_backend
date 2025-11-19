@@ -72,6 +72,7 @@ INSTALLED_APPS = [
     'defender',
     'drf_yasg',
     'schema_viewer',
+    'guardian'
 
 ]
 
@@ -186,6 +187,9 @@ AUTHENTICATION_BACKENDS = [
 
     # `allauth` specific authentication methods, such as login by email
     'allauth.account.auth_backends.AuthenticationBackend',
+    # for guardian permisisions
+    'guardian.backends.ObjectPermissionBackend',
+
 ]
 
 REST_FRAMEWORK = {
