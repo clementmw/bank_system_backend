@@ -27,9 +27,9 @@ class CustomUserManager(BaseUserManager):
         extra_fields.setdefault("is_active", True)
 
         try:
-            admin_role = Role.objects.get(name="ADMIN")
+            admin_role = Role.objects.get(role_name="Administrator")
         except ObjectDoesNotExist:
-            admin_role = Role.objects.create(name="ADMIN")
+            admin_role = Role.objects.create(role_name="Administrator", category = "System")
         extra_fields.setdefault("role", admin_role)
 
         if extra_fields.get("is_staff") is not True:

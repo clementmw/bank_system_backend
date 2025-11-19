@@ -9,37 +9,63 @@ import secrets
 
 
 
-class Role(models.Model):
-    ROLE_CHOICES = (
-        ('ADMIN', 'ADMIN'), #assumption it is the superadmin or system administrator
-        ('CUSTOMER', 'CUSTOMER'),
-        ('STAFF', 'STAFF'),
-
-    )
-
-
-    name = models.CharField(max_length=50, unique=True, choices=ROLE_CHOICES)
-    permissions = models.ManyToManyField(Permission, blank=True,related_name="role_permissions")#specific roles for each role
+class BaseModel(models.Model):
+    """Abstract base model with common fields"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        abstract = True
+
+
+class Department(BaseModel):
+    DEPARTMENT_CHOICES = (
+        ('FINANCE', 'Finance'),
+        ('OPERATIONS', 'Operations'),
+        ('IT', 'IT Support'),
+        ('HR', 'Human Resources'),
+        ('RISK', 'Risk & Compliance'),
+        ('CUSTOMER_SERVICE', 'Customer Service'),
+    )
+    name = models.CharField(max_length=50, unique=True, choices=DEPARTMENT_CHOICES)
+    hod = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='hod_of_department')
+    code = models.CharField(max_length=10, unique=True)
 
     def __str__(self):
         return self.name
+
+class Role(BaseModel):
+    """Enhanced role model with hierarchical support"""
     
-    def add_permission_by_codename(self, codename, app_label):
-        """Helper method to add permission by codename"""
-        try:
-            content_type = ContentType.objects.get(app_label=app_label)
-            permission = Permission.objects.get(
-                codename=codename,
-                content_type=content_type
-            )
-            self.permissions.add(permission)
-        except (ContentType.DoesNotExist, Permission.DoesNotExist):
-            raise ValueError(f"Permission {codename} in app {app_label} not found")
+    ROLE_CATEGORIES = (
+        ('SYSTEM', 'System'),
+        ('STAFF', 'Staff'),
+        ('Customer', 'Customer'),
+    )
 
+    role_name = models.CharField(max_length=100, blank=True)
+    category = models.CharField(max_length=50, choices=ROLE_CATEGORIES)
+    department_name = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True)
+    permissions = models.ManyToManyField(
+        Permission,
+        verbose_name='role permissions',
+        blank=True,
+        related_name='roles'
+    )
+    description = models.TextField(blank=True)
+    is_system_role = models.BooleanField(default=False)
 
-class User(AbstractUser):
+    def __str__(self):
+        return self.role_name 
+
+    class Meta:
+        db_table = 'auth_role'
+        indexes = [
+            models.Index(fields=['category', 'is_active']),
+        ]
+class User(AbstractUser,BaseModel):
     role = models.ForeignKey(Role, on_delete=models.PROTECT,related_name="users")
     email = models.EmailField(unique=True)
     otp = models.CharField(max_length=6, blank=True, null=True)
@@ -47,8 +73,7 @@ class User(AbstractUser):
     email_verification_token = models.CharField(max_length=64, blank=True, null=True)
     email_verification_expiry = models.DateTimeField(blank=True, null=True)
     password = models.CharField(max_length=128)  
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
 
  
     username = None
@@ -102,40 +127,48 @@ class User(AbstractUser):
             models.Index(fields=['role', 'is_active'])
         ]
         permissions = [
+            # User Management
+            ("can_manage_users", "Can manage users"),
+            ("can_view_user_profiles", "Can view user profiles"),
+            
+            # Finance
             ("view_account_balance", "Can view account balance"),
             ("transfer_funds", "Can transfer funds"),
             ("approve_transfer", "Can approve large transfers"),
-            ("manage_users", "Can manage users"),
             ("view_transaction_history", "Can view transaction history"),
             ("manage_accounts", "Can create/close accounts"),
             ("override_limits", "Can override transaction limits"),
             ("view_audit_log", "Can view audit logs"),
             ("process_kyc", "Can process KYC verification"),
+            
+            # System Administration
+            ("can_manage_system_settings", "Can manage system settings"),
+            ("can_view_system_logs", "Can view system logs"),
+            
         ]
-    
 
-class EmployeeProfile(models.Model):
-    DEPARTMENT_CHOICES = (
-        ('FINANCE', 'Finance'),
-        ('OPERATIONS', 'Operations'),
-        ('IT', 'IT Support'),
-        ('HR', 'Human Resources'),
-        ('RISK', 'Risk & Compliance'),
-        ('CUSTOMER_SERVICE', 'Customer Service'),
+
+class EmployeeProfile(BaseModel):
+    employment_type_choices = (
+        ('FULL_TIME', 'Full Time'),
+        ('PART_TIME', 'Part Time'),
+        ('CONTRACT', 'Contract'),
+        ('INTERN', 'Intern'),
     )
-
     user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='employee_profile')
     employee_id = models.CharField(max_length=20, unique=True)
-    department = models.CharField(max_length=50, choices=DEPARTMENT_CHOICES)
+    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
+    employment_type  = models.CharField(max_length=20, choices=employment_type_choices, default='FULL_TIME')
     job_title = models.CharField(max_length=100)
     date_of_hire = models.DateField(null=True, blank=True)
+    date_of_termination = models.DateField(null=True, blank=True)
     phone_number = models.CharField(max_length=20, unique=True)
     emergency_contact_name = models.CharField(max_length=100, null=True, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, null=True, blank=True)
     is_active_employee = models.BooleanField(default=True)
+    address = models.TextField(blank=True, null=True)
+    created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_employees') #later used foraudit trail
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.employee_id} - {self.user.email} ({self.job_title})"
@@ -150,9 +183,15 @@ class EmployeeProfile(models.Model):
         ]
         
         unique_together = ('user', 'employee_id')
-class CustomerProfile(models.Model):
+class CustomerProfile(BaseModel):
+    customer_tier_choices = (
+        ('STANDARD','Standard'),
+        ('PREMIUM','Premium'),
+        ('BUSINESS','Business')
+    )
     user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='customer_profile')
     customer_id = models.CharField(max_length=20, unique=True)
+    customer_tier = models.CharField(max_length=20, choices=customer_tier_choices, default='STANDARD')
     phone_number = models.CharField(max_length=20, unique=True)
     national_id = models.CharField(max_length=20, null=True,blank=True) #updated during kyc 
     address = models.TextField(blank=True, null=True)
@@ -165,9 +204,15 @@ class CustomerProfile(models.Model):
         ('MEDIUM', 'Medium'),
         ('HIGH', 'High')
     ])
+    preferred_communication_channel = models.CharField(max_length=20, default='EMAIL', choices=[
+        ('EMAIL', 'Email'),
+        ('SMS', 'SMS'),
+        ('PHONE', 'Phone')
+    ])
+    marketing_preferences = models.BooleanField(default=False) #to use during newsletter
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
+
 
     def __str__(self):
         return f"Customer {self.customer_id} - {self.user.email}"
@@ -183,59 +228,79 @@ class CustomerProfile(models.Model):
 
         unique_together = ('user', 'customer_id')
  
-
-class KycProfile(models.Model):
-    DOCUMENT_TYPE_CHOICES = (
-        ('ID', 'National ID'),
-        ('PASSPORT', 'Passport'),
-        ('DRIVERS_LICENSE', 'Drivers License'),
-        ('VOTER_ID', 'Voter ID'),
-        ('KRA_CERTIFICATE', 'Kra_certificate'),
-        ('OTHER', 'Other') 
-    )
-    VERIFICATION_STATUS = {
+class KycProfile(BaseModel):
+    VERIFICATION_STATUS = (
         ('PENDING', 'Pending'),
         ('VERIFIED', 'Verified'),
         ('REJECTED', 'Rejected'),
-        ('EXPIRED', 'Expired'),
-        ('UPLOADED','Uploaded')
-    }
+        ('UNDER_REVIEW', 'Under Review'),
+        ('INCOMPLETE', 'Incomplete')
+    )
+    
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="kyc_profile")
-    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPE_CHOICES)
-    document_upload = models.FileField(upload_to='kyc_documents/',null=True,blank=True)
-    verification_status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default='PENDING')
+    verification_status = models.CharField(max_length=20, choices=VERIFICATION_STATUS, default='INCOMPLETE')
     verified_at = models.DateTimeField(null=True, blank=True)
     verified_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="verified_kyc_profiles")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    review_notes = models.TextField(blank=True, null=True)
 
-    def __str__(self):
-        return f"{self.user.email} - {self.document_type}"
-    
-    # indexing for frequent querys
+
     class Meta:
         indexes = [
             models.Index(fields=['user', 'verification_status']),
+            models.Index(fields=['verification_status']),
         ]
-        permissions = [
-            ("can_process_kyc", "Can process KYC verification"),
-            ("can_view_kyc", "Can view KYC details"),
-            ("can_approve_kyc", "Can approve KYC verification"),
-            ("can_reject_kyc", "Can reject KYC verification"),
-            ("can_expire_kyc", "Can expire KYC verification"),
+
+    def __str__(self):
+        return f"KYC Profile - {self.user.email} - {self.verification_status}"
+
+
+class KycDocument(BaseModel):
+  
+    DOCUMENT_STATUS = (
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+        ('EXPIRED', 'Expired')
+    )
+
+    kyc_profile = models.ForeignKey(KycProfile, on_delete=models.CASCADE, related_name="documents")
+    document_type = models.CharField(max_length=30)
+    document_upload = models.FileField(upload_to='kyc_documents/')
+    file_name = models.CharField(max_length=255, blank=True, null=True)
+    file_size = models.PositiveIntegerField(blank=True, null=True)
+    expiry_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=DOCUMENT_STATUS, default='PENDING')
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, null=True)
+
+
+    class Meta:
+        unique_together = ('kyc_profile', 'document_type')  # One document type per KYC profile
+        indexes = [
+            models.Index(fields=['kyc_profile', 'document_type']),
+            models.Index(fields=['status']),
+            models.Index(fields=['document_type']),
         ]
-        
+
+    def save(self, *args, **kwargs):
+        if self.document_upload:
+            self.file_name = self.document_upload.name
+            self.file_size = self.document_upload.size
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.kyc_profile.user.email} - {self.document_type} - {self.status}"
 
 
 
-class SessionLogs(models.Model):
+class SessionLogs(BaseModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="session_logs")
     login_time = models.DateTimeField(auto_now_add=True)
     logout_time = models.DateTimeField(null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     browser_agent = models.CharField(max_length=255, null=True, blank=True)  #browser used to access the system
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+
     
     def __str__(self):
         return f"Session log for {self.user.email} at {self.login_time}" 
