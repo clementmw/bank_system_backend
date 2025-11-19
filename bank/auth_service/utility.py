@@ -30,6 +30,8 @@ def generate_account_number():
 
 def generate_temporary_password(): 
     characters = string.ascii_letters + string.digits
-    password = ''.join(random.choice(characters) for _ in range(10))
+    password = ''.join(random.choice(characters) for _ in range(12))
+    # print(password)
     
     return password
+

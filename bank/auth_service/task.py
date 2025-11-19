@@ -21,4 +21,8 @@ def send_onboarding_email(user_id):
 def send_new_kyc(kyc_id):
     pass
 
+def send_employee_onboarding_email(employee_id):
+    pass
+    
+
 

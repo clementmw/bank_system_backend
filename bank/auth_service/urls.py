@@ -12,6 +12,14 @@ urlpatterns = [
     path('login/customer/', CustomerLoginView.as_view(), name = "login customer" ),
     path('kyc/', handleKYC.as_view(), name='kyc upload'),
     path('logout/', handleLogoutView.as_view(), name='logout'),
+    path('forget-password/', ForgetpasswordView.as_view(), name='forget password'),
+    path('confirm-otp/', ConfirmOtpView.as_view(), name='confirm otp'),
+    path('reset-password/', ResetPasswordView.as_view(), name='reset password'),
+    
+    # Employees Routes
+    path('login/staff/', StaffLoginView.as_view(), name='staff login'),
+    path('logout/staff/', StaffLogoutView.as_view(), name='staff logout'),
+    path('employee/creation/', HandleEmployeeAccount.as_view(), name='employee account creation'),
     
 
 
