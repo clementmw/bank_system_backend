@@ -2,6 +2,8 @@ import random
 import string
 import datetime
 import uuid
+from rest_framework import pagination
+
 
 
 def generate_otp():
@@ -35,3 +37,8 @@ def generate_temporary_password():
     
     return password
 
+class CustomPagination(pagination.PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+    page_query_param = 'page'

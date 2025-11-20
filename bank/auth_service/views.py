@@ -7,6 +7,7 @@ from rest_framework import status
 from .serializers import *
 from .models import *
 from .task import *
+from .utility import *
 from rest_framework.permissions import IsAuthenticated,BasePermission
 from rest_framework_simplejwt.tokens import RefreshToken
 import logging
@@ -14,7 +15,9 @@ from django.db import transaction
 import os
 import re
 from django.utils import timezone
-from .permissions import CanManageEmployees
+from .permissions import *
+from django.contrib.auth.mixins import PermissionRequiredMixin
+from django.db.models import Q
 
 
 logger = logging.getLogger(__name__)
@@ -506,9 +509,44 @@ class StaffLogoutView(APIView):
 
 
 class HandleEmployeeAccount(APIView):
-    permission_classes = [IsAuthenticated, CanManageEmployees]
+    permission_classes = [IsAuthenticated, EmployeeAccessPermission]
 
-    def post(self, request):
+    def get(self,request):
+        try:
+            get_employees = EmployeeProfile.objects.all().order_by('-created_at')
+
+            # filters
+            role_name = request.query_params.get('role_name')
+            employment_type = request.query_params.get('employment_type')
+            department = request.query_params.get('department')
+            search = request.query_params.get('search')
+
+            if role_name:
+                get_employees = get_employees.filter(user__role__role_name=role_name)
+            if employment_type:
+                get_employees = get_employees.filter(employment_type=employment_type)
+            if department:
+                get_employees = get_employees.filter(department__department_name=department)
+
+            if search:
+                get_employees = get_employees.filter(
+                    Q(user__first_name__icontains=search) |
+                    Q(user__last_name__icontains=search) |
+                    Q(employee_id__icontains=search) |
+                    Q(user__email__icontains=search)
+                )
+
+            paginator = CustomPagination()
+            paginated_employees = paginator.paginate_queryset(get_employees, request)
+            serializer = EmployeeProfileSerializer(paginated_employees, many=True)
+            
+            return paginator.get_paginated_response(serializer.data)
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request):     
+
         data = request.data
         email = data.get("email").lower()
         password = generate_temporary_password()
@@ -546,6 +584,8 @@ class HandleEmployeeAccount(APIView):
                     user.is_active = True  # Employees are active by default
                     user.save()
 
+                    # get department based on role name
+
                     # Create EmployeeProfile
                     new_employee = EmployeeProfile.objects.create(
                         user=user,
@@ -558,6 +598,11 @@ class HandleEmployeeAccount(APIView):
                         emergency_contact_name = emergecy_person,
                         emergency_contact_phone = emergency_contact
                     )
+                    department = Role.objects.get(role_name=role_name).department_name
+                    if department:
+                        dept_obj, created = Department.objects.get_or_create(name=department)
+                        new_employee.department = dept_obj
+                        new_employee.save()
                     #send the email to the employee
                     try:
                         send_employee_onboarding_email.delay(new_employee.id)
@@ -581,4 +626,5 @@ class HandleEmployeeAccount(APIView):
         except Exception as e:
             return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-      
+
+#tasks 1, delete/update employee 2. review kyc to allow customeer to access dashboards
