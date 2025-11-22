@@ -311,3 +311,7 @@ class SessionLogs(BaseModel):
             models.Index(fields=['user', 'login_time']),
         ]
 
+
+class AuditLogs(BaseModel):
+    pass
+
