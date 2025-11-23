@@ -1,6 +1,6 @@
 # will handle all authentication here .
 
-from django.shortcuts import render
+from django.shortcuts import render,get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -18,6 +18,7 @@ from django.utils import timezone
 from .permissions import *
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import Q
+
 
 
 logger = logging.getLogger(__name__)
@@ -452,7 +453,7 @@ class StaffLoginView(APIView):
 
 
                 if not user.is_active:
-                    return Response({"error": "Account is inactive. Please verify your email."}, #change to a more generic response 
+                    return Response({"error": "Account is inactive. Please contact Admin."}, #change to a more generic response 
                                     status=status.HTTP_403_FORBIDDEN)
                 
                 # session logs for auditing
@@ -553,7 +554,7 @@ class HandleEmployeeAccount(APIView):
         first_name = data.get("first_name")
         last_name = data.get("last_name")
         role_name = data.get("role_name")  # e.g., "STAFF", "ADMIN"
-        department_name = data.get("department_name")  # e.g., "HR", "IT"
+        # department_name = data.get("department_name")  # e.g., "HR", "IT"
         phone_number = data.get("phone_number")
         address = data.get("address")
         employment_type = data.get("employment_type")  # e.g., "FULL_TIME", "PART_TIME"
@@ -600,7 +601,7 @@ class HandleEmployeeAccount(APIView):
                     )
                     department = Role.objects.get(role_name=role_name).department_name
                     if department:
-                        dept_obj, created = Department.objects.get_or_create(name=department)
+                        dept_obj, created = Department.objects.get(name=department)
                         new_employee.department = dept_obj
                         new_employee.save()
                     #send the email to the employee
@@ -628,3 +629,72 @@ class HandleEmployeeAccount(APIView):
 
 
 #tasks 1, delete/update employee 2. review kyc to allow customeer to access dashboards
+
+class ManageEmployeeAccount(APIView):
+    permission_classes = [IsAuthenticated, EmployeeAccessPermission]
+
+    def patch(self,request,id):
+
+        user = request.user
+        print(user.id)
+
+        data = request.data
+        first_name = data.get("first_name")
+        last_name = data.get("last_name")
+        role_name = data.get("role_name")
+
+
+
+      
+        try:
+            employee = get_object_or_404(EmployeeProfile,id=id)
+
+            # is user id is not in the employee
+            if user.id == employee.user.id:
+                return Response({"error": "You cannot modify your own account"}, status=status.HTTP_403_FORBIDDEN)
+
+            serializer = EmployeeProfileSerializer(employee, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+
+                user = employee.user
+                if first_name:
+                    user.first_name = first_name
+                if last_name:
+                    user.last_name = last_name
+
+                if role_name:
+                    role = get_object_or_404(Role, role_name=role_name)
+                    if role.category == "SYSTEM":
+                        return Response({"error": "Invalid role for employee"}, status=status.HTTP_400_BAD_REQUEST)
+                    user.role = role
+                    user.save()
+
+                    # update the employee wit the deparrtment
+                    if role.department_name:
+                        employee.department = role.department_name
+
+                        employee.save()
+                
+                user.save()
+
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def delete(self,request,id):
+        try:
+            employee = EmployeeProfile.objects.get(id=id)
+            user = employee.user
+            user.is_active = False  # Soft delete by deactivating the user
+            user.save()
+
+            return Response({"message": "Employee account deactivated successfully"}, status=status.HTTP_200_OK)
+        
+        except EmployeeProfile.DoesNotExist:
+            return Response({"error": "Employee not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
