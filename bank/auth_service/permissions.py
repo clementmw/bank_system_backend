@@ -58,3 +58,22 @@ class EmployeeAccessPermission(BasePermission):
         
         # For any other methods, deny by default
         return False
+
+class ReviewKycPermissions(BasePermission):
+    required_permissions = ['can_view_user_profiles']
+    def has_permission(self, request, view):
+
+        user = request.user
+
+        # Allow superuser
+        if user.is_superuser:
+            return True
+
+        # Ensure the user has a role
+        if not user.role:
+            return False
+
+        # Check if user has the required permission
+        return user.role.permissions.filter(
+            codename__in=self.required_permissions
+        ).exists()
