@@ -4,6 +4,7 @@ from django.shortcuts import render,get_object_or_404
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed
 from .serializers import *
 from .models import *
 from .task import *
@@ -18,6 +19,11 @@ from django.utils import timezone
 from .permissions import *
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.db.models import Q
+# from django_ratelimit.decorators import ratelimit
+from django.utils.decorators import method_decorator
+from django.template.loader import render_to_string
+from django.template import TemplateDoesNotExist
+
 
 
 
@@ -90,8 +96,13 @@ class RegisterView(APIView):
             if User.objects.filter(email=email).exists():
                 return Response({'error': 'Email already exists'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # validate password
+            password_error = validate_password_strength(password)
+            if not password_error[0]:
+                return Response({'error': password_error[1]}, status=status.HTTP_400_BAD_REQUEST)
 
-            role = Role.objects.get(name="CUSTOMER")  # default role is customer
+
+            role = Role.objects.get(role_name="Customer")  # default role is customer
             
             with transaction.atomic():               
                 serializer = UserSerializer(data={**request.data, "email":email, "role": role.id})
@@ -115,7 +126,7 @@ class RegisterView(APIView):
                         verification_status = "INCOMPLETE"
                     )
                     
-                    logger.info(f"New user registered: {email} with role {role.name}")
+                    logger.info(f"New user registered: {email} with role {role.role_name}")
 
                     # trigger email verification task
                     send_verification_email(user.id)
@@ -123,7 +134,7 @@ class RegisterView(APIView):
                     return Response(
                         {
                             'message': 'User registered successfully',
-                            'role':user.role.name,
+                            'role':user.role.role_name,
                             # 'user': serialize_full_user(user)
                          },
                          
@@ -188,7 +199,7 @@ class CustomerLoginView(APIView):
                     return Response({"error": "Invalid email or password"},
                                     status=status.HTTP_401_UNAUTHORIZED)
 
-                if user.role.name != "CUSTOMER":
+                if user.role.role_name != "Customer":
                     return Response({"error": "Access denied. Not a customer."}, #change to a more generic response 
                                     status=status.HTTP_403_FORBIDDEN)
 
@@ -223,15 +234,125 @@ class CustomerLoginView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class ForgetpasswordView(APIView):
-    pass
+    # @method_decorator(ratelimit(key='post:email', rate='10/m', method='POST'))
+    def post(self, request):
+        data = request.data
+        email = data.get('email', '').lower()
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = User.objects.get(email__iexact = email)
+
+            if user.is_superuser or user.is_staff:
+                pass
+            
+            if user.role.role_name != "Customer":
+                pass
+                
+            else:
+                # generate otp
+                user.set_otp()
+                otp = user.otp
+
+                # context = {
+                #     "first_name":user.first_name,
+                #     "otp":otp
+                # }
+
+                # html_content = None
+
+                # try:
+                #     html_content = render_to_string("emails/reset_password.html", context)
+                # except TemplateDoesNotExist as e:
+                #     print(f"Template not found: {e}")
+                
+                # # render html content
+                # html_content = render_to_string("emails/reset_password.html", context)
+
+                # send_email_task.delay(
+                #     subject = "Reset your password",
+                #     recipient_email = user.email,
+                #     html_content = html_content,
+                #     context = context,
+                #     template_name = "emails/reset_password.html"
+                # )
+        except User.DoesNotExist:
+            # Fail silently if email not found
+            pass
+
+        return Response({'message': 'Password reset link sent'}, status=status.HTTP_200_OK)
+
+        
+
 
 class ConfirmOtpView(APIView):
-    pass
+    def post(self, request):
+        try:
+            otp = request.data.get("otp")
+            email = request.data.get('email', '').lower()
+
+            if not otp:
+                return Response({"error": "OTP is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+            user = User.objects.filter(otp=otp,email=email).first()
+            if not user:
+                return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not user.is_otp_valid():
+                return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+            return Response({"message": "OTP is valid",
+                             "email":email,
+                             "otp": otp}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 class ResetPasswordView(APIView):
-    pass
+    def post(self, request):
+        try:
+            data = request.data
+            # print(data)
 
-class handleKYC(APIView):
+            otp = data.get('otp')
+            password = data.get("password")
+            email = request.data.get('email', '').lower()
+
+            if not otp:
+                raise AuthenticationFailed("OTP is required")
+
+            user = User.objects.filter(otp=otp, email=email).first()
+
+            if not user:
+                return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not user.is_otp_valid():
+                return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not password:
+                return Response({"error": "New password is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # validate password before reset
+            password_error = validate_password_strength(password)
+            if not password_error[0]:
+                return Response({"error": password_error[1]}, status=status.HTTP_400_BAD_REQUEST)
+            
+
+            user.set_password(password)
+            user.otp = None
+            user.otp_expiry = None
+            user.save()
+
+            return Response({'message': 'Password has been reset successfully'}, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class HandleKYC(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self,request):
@@ -239,12 +360,36 @@ class handleKYC(APIView):
         customer can see their upploed data
         """
 
+        user = request.user
+
+        if user.role.role_name != "Customer":
+            return Response({"error": "Access for KYC denied"}, status=status.HTTP_403_FORBIDDEN)
+
+        
+        try:
+            kyc_profile = KycProfile.objects.get(user=user)
+            
+            kyc_documents = KycDocument.objects.filter(kyc_profile=kyc_profile)
+
+            if not kyc_documents:
+                return Response({"error": "kyc_documents not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+
+            kyc_data = KycProfileSerializer(kyc_profile).data
+            kyc_data['documents'] = KycDocumentSerializer(kyc_documents, many=True).data
+
+            return Response(kyc_data, status=status.HTTP_200_OK)
+
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     def post(self, request):
         try:
             user = request.user
 
             # Ensure user is customer
-            if user.role.name != "CUSTOMER":
+            if user.role.role_name != "Customer":
                 return Response({"error": "Access for KYC denied"}, status=status.HTTP_403_FORBIDDEN)
 
             # Extract profile data
@@ -403,7 +548,7 @@ class handleKYC(APIView):
         
         return None
     
-class handleLogoutView(APIView):
+class HandleLogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -636,6 +781,7 @@ class ManageEmployeeAccount(APIView):
     def patch(self,request,id):
 
         user = request.user
+
         print(user.id)
 
         data = request.data
@@ -675,7 +821,7 @@ class ManageEmployeeAccount(APIView):
                         employee.department = role.department_name
 
                         employee.save()
-                
+
                 user.save()
 
                 return Response(serializer.data, status=status.HTTP_200_OK)
@@ -698,3 +844,102 @@ class ManageEmployeeAccount(APIView):
         
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    
+class KYCReviewView(APIView):
+    permission_classes = [IsAuthenticated, ReviewKycPermissions]
+
+    def get(self, request):
+        try:
+            kyc_profiles = KycProfile.objects.select_related('user').prefetch_related('documents').order_by('-updated_at')
+
+            # Enhanced filtering
+            status_filter = request.query_params.get('status')
+            user_email = request.query_params.get('user_email')
+            
+            if status_filter:
+                kyc_profiles = kyc_profiles.filter(verification_status=status_filter)
+            
+            if user_email:
+                kyc_profiles = kyc_profiles.filter(user__email__icontains=user_email)
+
+            paginator = CustomPagination()
+            paginated_kyc = paginator.paginate_queryset(kyc_profiles, request)
+            serializer = KycProfileSerializer(paginated_kyc, many=True)
+            
+            return paginator.get_paginated_response(serializer.data)
+        
+        except Exception as e:
+            logger.error(f"Error fetching KYC profiles: {str(e)}")
+            return Response(
+                {"error": "Unable to fetch KYC profiles"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def patch(self, request):
+        try:
+            kyc_profile_id = request.data.get('kyc_profile_id')
+            new_status = request.data.get('status')
+            notes = request.data.get('notes', '')
+
+            # Validation
+            if not kyc_profile_id:
+                return Response(
+                    {"error": "KYC profile ID is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if not new_status:
+                return Response(
+                    {"error": "Status is required"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            valid_statuses = ['APPROVED', 'REJECTED', 'UNDER_REVIEW']
+            if new_status not in valid_statuses:
+                return Response(
+                    {"error": f"Invalid status. Must be one of: {', '.join(valid_statuses)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            kyc_profile = get_object_or_404(KycProfile, id=kyc_profile_id)
+            
+            # Update KYC profile
+            kyc_profile.verification_status = new_status
+            kyc_profile.review_notes = notes
+            kyc_profile.verified_by = request.user
+            kyc_profile.verified_at = timezone.now()
+            kyc_profile.save()
+
+            # Update related documents status if needed
+            if new_status in ['APPROVED', 'REJECTED']:
+                self._update_documents_status(kyc_profile, new_status, request.user)
+
+            # Send notification
+            # send_kyc_status_update.delay(kyc_profile.id, status)
+
+            return Response(
+                {"message": "KYC status updated successfully"}, 
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as e:
+            logger.error(f"Error updating KYC status: {str(e)}")
+            return Response(
+                {"error": "Unable to update KYC status"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _update_documents_status(self, kyc_profile, status, reviewed_by):
+        """Update status of all documents when KYC is approved/rejected"""
+        document_status_map = {
+            'APPROVED': 'APPROVED',
+            'REJECTED': 'REJECTED'
+        }
+        
+        if status in document_status_map:
+            kyc_profile.documents.all().update(
+                status=document_status_map[status],
+                reviewed_by=reviewed_by,
+                reviewed_at=timezone.now()
+            )
