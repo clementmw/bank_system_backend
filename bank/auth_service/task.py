@@ -23,6 +23,8 @@ def send_new_kyc(kyc_id):
 
 def send_employee_onboarding_email(employee_id):
     pass
-    
+
+def send_email_task(data):
+    pass
 
 

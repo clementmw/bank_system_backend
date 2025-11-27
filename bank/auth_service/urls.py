@@ -10,8 +10,8 @@ urlpatterns = [
     path('register/', RegisterView.as_view(), name='Customer registeration'),
     path('verify/email/', VerifyEmailView.as_view(), name='verify-email'),
     path('login/customer/', CustomerLoginView.as_view(), name = "login customer" ),
-    path('kyc/', handleKYC.as_view(), name='kyc upload'),
-    path('logout/', handleLogoutView.as_view(), name='logout'),
+    path('kyc/', HandleKYC.as_view(), name='kyc upload'),
+    path('logout/', HandleLogoutView.as_view(), name='logout'),
     path('forget-password/', ForgetpasswordView.as_view(), name='forget password'),
     path('confirm-otp/', ConfirmOtpView.as_view(), name='confirm otp'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset password'),
@@ -20,6 +20,8 @@ urlpatterns = [
     path('login/staff/', StaffLoginView.as_view(), name='staff login'),
     path('logout/staff/', StaffLogoutView.as_view(), name='staff logout'),
     path('employee/creation/', HandleEmployeeAccount.as_view(), name='employee account creation'),
+    path('employee/manage/<str:id>/', ManageEmployeeAccount.as_view(), name='manage employees'),
+    path('employee/kyc/review/', KYCReviewView.as_view(), name='kyc review')
     
 
 
