@@ -46,3 +46,25 @@ class CustomerProfileSerializer(serializers.ModelSerializer):
         model = CustomerProfile
         fields = '__all__'
 
+
+class KycDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = KycDocument
+        fields = '__all__'
+        
+
+class KycProfileSerializer(serializers.ModelSerializer):
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_full_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    documents = KycDocumentSerializer(many=True, read_only=True)
+    verified_by_email = serializers.EmailField(source='verified_by.email', read_only=True)
+    
+    class Meta:
+        model = KycProfile
+        fields = [
+            'id', 'user', 'user_email', 'user_full_name', 
+            'verification_status', 'verified_at', 'verified_by', 
+            'verified_by_email', 'review_notes', 'documents',
+            'created_at', 'updated_at'
+        ]
+    

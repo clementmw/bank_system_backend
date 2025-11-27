@@ -60,7 +60,7 @@ class EmployeeAccessPermission(BasePermission):
         return False
 
 class ReviewKycPermissions(BasePermission):
-    required_permissions = ['can_view_user_profiles']
+    required_permissions = ['process_kyc']
     def has_permission(self, request, view):
 
         user = request.user
