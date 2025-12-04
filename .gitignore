@@ -20,4 +20,5 @@ migrations/
 # Local development & testing
 instance/
 .pytest_cache/
-.coverage      
+.coverage  
+*_documents/    

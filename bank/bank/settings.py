@@ -32,6 +32,14 @@ DEBUG = True
 ALLOWED_HOSTS = ['*']
 
 
+# Set session expiry for admin users
+SESSION_COOKIE_AGE = 3600  # Log out after 1 hr of inactivity (
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Log out when the browser closes
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = 'None'  # For cross-site cookies
+CSRF_COOKIE_SAMESITE = 'None'  # For CSRF cookies if using CSRF protection
+CSRF_COOKIE_SECURE = True  # Ensure CSRF cookie is sent over HTTPS set to true
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -61,7 +69,10 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'django_celery_beat',
-    'defender'
+    'defender',
+    'drf_yasg',
+    'schema_viewer',
+    'guardian'
 
 ]
 
@@ -168,8 +179,18 @@ MEDIA_URL = '/media/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-AUTH_USER_MODEL = "app.User"  # register the User table that will act as a connection between the diffrent user
+AUTH_USER_MODEL = "auth_service.User"  # register the User table that will act as a connection between the diffrent user
 
+AUTHENTICATION_BACKENDS = [
+    # Needed to login by username in Django admin, regardless of `allauth`
+    'django.contrib.auth.backends.ModelBackend',
+
+    # `allauth` specific authentication methods, such as login by email
+    'allauth.account.auth_backends.AuthenticationBackend',
+    # for guardian permisisions
+    'guardian.backends.ObjectPermissionBackend',
+
+]
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -177,13 +198,16 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
 
     ],
+    
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30), # in production update to 1 hr
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=7), # in production update to 1 hr
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,  # Returns new refresh token on refresh
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,  # Update last login time on login
     'REFRESH_TOKEN_GRACE_PERIOD':timedelta(hours=1) # grace period for refresh token
 }
+
+FRONTEND_URL = "localhost:3000"
