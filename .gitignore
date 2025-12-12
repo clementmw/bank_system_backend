@@ -21,4 +21,5 @@ migrations/
 instance/
 .pytest_cache/
 .coverage  
-*_documents/    
+*_documents/  
+schema.yml  
