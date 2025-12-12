@@ -1,33 +1,23 @@
 from django.contrib import admin
 from django.urls import path,include
 from rest_framework import permissions
-from drf_yasg.views import get_schema_view
-from drf_yasg import openapi
+from django_prometheus import exports
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 
-schema_view = get_schema_view(
-   openapi.Info(
-      title="Evergreen",
-      default_version='v1.0',
-      description="Evergreeen management system",
-      terms_of_service="https://www.google.com/policies/terms/",
-      contact=openapi.Contact(email="clementmacharia62@gmail.com"),
-      license=openapi.License(name="BSD License"),
-   ),
-   public=True,
-   permission_classes=(permissions.AllowAny,),
-)
 
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/v1.0/',include('app.urls')),
-    path('api/v1.0/analysis/', include('analytics.urls')),
-    path('api/v1.0/auth/', include('auth_service.urls')),
-    
-    
-    #documentation
-    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-    path('swagger.json/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path('schema_viewer/', include('schema_viewer.urls'))
+   path('admin/', admin.site.urls),
+   path('api/v1.0/accounts/',include('accounts.urls')),
+   path('api/v1.0/analysis/', include('analytics.urls')),
+   path('api/v1.0/auth/', include('auth_service.urls')),
+   
+   
+   #documentation
+   path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+   path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+   path('api/schema/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),    #metrics prometheus
+   #metrics
+   path('', include('django_prometheus.urls')),
+   path('metrics/', exports.ExportToDjangoView, name='metrics'),
 ]

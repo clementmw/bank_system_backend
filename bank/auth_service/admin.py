@@ -1,11 +1,9 @@
 from django.contrib import admin
 from .models import *
 from .utility import *
+
 from guardian.admin import GuardedModelAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-
-
-
 
 admin.site.site_header = "EVERGREEN DASHBOARD "
 admin.site.site_title = "EVERGREEN"
