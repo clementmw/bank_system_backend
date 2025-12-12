@@ -2,7 +2,7 @@ from django.shortcuts import render
 from .models import *
 from .serializers import *
 from .utility import *
-from .tasks import *
+# from .tasks import *
 from .permissions import *
 from django.http import HttpResponse
 from auth_service.models import *
@@ -17,6 +17,8 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q, Sum
 from decimal import Decimal
+from .metrics import *
+from .documentation import v1
 
 
 
@@ -47,9 +49,10 @@ class AccountView(APIView):
             account_type = get_object_or_404(AccountType, name = account_type)
 
             # check if customer verification status in kyc
-            kystatus = KycProfile.objects.get(user=user, verification_status="APPROVED")
-            if not kystatus:
-                return Response({"error": "Customer is not verified"}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                kystatus = KycProfile.objects.get(user=user, verification_status="VERIFIED")
+            except KycProfile.DoesNotExist:
+                return Response({"error": "KYC not verified"}, status=status.HTTP_400_BAD_REQUEST)
 
             # check if customer has any account in relation to the user
             account = Account.objects.filter(customer=customer)
@@ -66,9 +69,11 @@ class AccountView(APIView):
                     balance=0.0
                 )
                 account.account_number = generate_account_number()
-                account.status = "ACTIVE"
+                account.status = "PENDING_APPROVAL" 
                 account.is_primary = is_primary
                 account.save()
+                accounts_created_total.inc()
+
                 
 
                 # create an account limit for the account
@@ -119,6 +124,7 @@ class AccountView(APIView):
 
         
         except Exception as e:
+            accounts_creation_failed_total.inc()
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -170,6 +176,173 @@ class ManageAccounts(APIView):
         except Exception as e:
             return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+    
+class ApproveAccounts(APIView):
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+    
+    @v1.approve_account_docs()
+    def post(self,request,account_id):
+            
+        """
+        bank staff approve or reject account opening
+        """
+
+        user = request.user
+       
+        try:
+            # get the account
+            account = Account.objects.get(id=account_id)
+
+            # ensure it has a pending approval status
+            if account.status != "PENDING_APPROVAL":
+                return Response({"error": "Account is not pending approval",
+                                 "account_state": account.status
+                                 }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # check if account is active 
+            if not account.is_active:
+                return Response({"error": "Account is not active"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # activvate acc
+            account.status = "ACTIVE"
+            account.approved_at = timezone.now()
+            account.approved_by = user
+            account.save()
+
+            # update metrics
+            accounts_approved_total.inc()
+
+            # celery task for email notification
+            # send_account_approved.delay(account.id, action)
+
+            return Response({
+                "message": "Account approved successfully",
+                "approved_by":user.email,
+                "role":user.role.role_name
+                             
+                }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class RejectAccounts(APIView):
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+
+    @v1.reject_account_docs()
+    def post(self, request, account_id):
+
+        """
+        bank staff reject account opening
+        """
+
+        user = request.user
+        
+        # Validate request data
+        reason = request.data.get('reason', '').strip()
+        
+        if not reason:
+            return Response(
+                {
+                    "error": "Rejection reason is required",
+                    "message": "Please provide a detailed reason for rejecting this account"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+                )
+        try:
+            # get the account
+            account = Account.objects.get(id=account_id)
+
+            # ensure it has a pending approval status
+            if account.status != "PENDING_APPROVAL":
+                return Response(
+                    {"error": "Account is not pending approval",
+                     "account_state": account.status
+                     
+                     }, status=status.HTTP_400_BAD_REQUEST)
+
+            # check if account is active
+            if not account.is_active:
+                return Response({"error": "Account is not active"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # activvate acc
+            account.status = 'CLOSED'
+            account.closed_by = request.user
+            account.closed_at = timezone.now()
+            account.closure_reason = reason
+
+            account.is_active = False
+            account.save()
+
+            # update metrics
+            accounts_rejected_total.inc()
+
+            # celery task for email notification
+            # send_account_rejected.delay(account.id, action)
+
+            return Response({"message": "Account rejected successfully",
+                             "closed_by":user.email,
+                             "role":user.role.role_name
+                             }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+
+class FreezeAccounts(APIView):
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+
+    def post(self, request, account_id):
+
+        """
+        bank staff temporary freeze account can be frau legal etc
+        """
+
+        user = request.user
+        data = request.data
+        reason = data.get('reason', '').strip()
+
+        if not reason:
+            return Response(
+                {
+                    "error": "Freeze reason is required",
+                    "message": "Please provide a detailed reason for freezing this account"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+                )
+
+        try:
+
+            get_acc = get_object_or_404(Account, id = account_id)
+            # ensure account is active
+            if not get_acc.is_active:
+                return Response({"error": "Account is not active"}, status=status.HTTP_400_BAD_REQUEST)
+            
+
+
+            get_acc.status = "FROZEN"
+            get_acc.closed_by = user
+            get_acc.closed_at = timezone.now()
+            get_acc.closure_reason = reason
+            get_acc.allow_debit= False
+            get_acc.allow_credit = False
+            get_acc.save()
+
+            # customer notification
+            # send_account_frozen.delay(get_acc.id, reason)
+
+            
+
+            return Response({"message": "Account frozen successfully",
+                             "closed_by":user.email,
+                             "role":user.role.role_name
+                             }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 
 
 
