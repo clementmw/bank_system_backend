@@ -6,6 +6,8 @@ from datetime import timedelta
 from .utility import *
 from django.contrib.contenttypes.models import ContentType
 import secrets
+from encrypted_model_fields.fields import EncryptedTextField
+
 
 
 
@@ -93,7 +95,7 @@ class User(AbstractUser,BaseModel):
     def is_otp_valid(self):
         """Check if the OTP is still valid."""
         if self.otp_expiry:
-            return timezone.now() < self.otp_expiry + timedelta(minutes=3)
+            return timezone.now() < self.otp_expiry + timedelta(minutes=5)
         return False
 
     def generate_email_token(self):
@@ -227,11 +229,23 @@ class CustomerProfile(BaseModel):
         ]
 
         unique_together = ('user', 'customer_id')
+
+
+class CustomerSecurityInformation(BaseModel):
+    """
+    contains information for 2fa during signup 
+    """
+    user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='security_information')
+    security_question = models.CharField(max_length=255)
+    security_answer_hash = EncryptedTextField(max_length=255) 
+
+    def __str__(self):
+        return f"Security Info for {self.user.email}"
  
 class KycProfile(BaseModel):
     VERIFICATION_STATUS = (
         ('PENDING', 'Pending'),
-        ('VERIFIED', 'Verified'),
+        ('APPROVED', 'Approved'),
         ('REJECTED', 'Rejected'),
         ('UNDER_REVIEW', 'Under Review'),
         ('INCOMPLETE', 'Incomplete')

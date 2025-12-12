@@ -16,6 +16,7 @@ from decouple import config
 from datetime import timedelta
 
 
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,6 +26,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = config("SECRET_KEY")
+FIELD_ENCRYPTION_KEY = config('ENCRYPTION_KEY')
+
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -44,13 +47,13 @@ CSRF_COOKIE_SECURE = True  # Ensure CSRF cookie is sent over HTTPS set to true
 
 INSTALLED_APPS = [
     'simpleui',
+    'django_prometheus',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'app',
     'analytics',
     'auth_service',
     'accounts',
@@ -70,13 +73,15 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'django_celery_beat',
     'defender',
-    'drf_yasg',
+    'drf_spectacular',
     'schema_viewer',
-    'guardian'
+    'guardian',
+    
 
 ]
 
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware", #handles static files like css for  admin dashboard
     'django.middleware.security.SecurityMiddleware',
@@ -89,6 +94,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # 'defender.middleware.FailedLoginMiddleware',  # Add Defender middleware
+    "django_prometheus.middleware.PrometheusAfterMiddleware", #should be last
+
 
 ]
 
@@ -198,6 +205,8 @@ REST_FRAMEWORK = {
         'rest_framework_simplejwt.authentication.JWTAuthentication',
 
     ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+
     
 }
 
@@ -211,3 +220,26 @@ SIMPLE_JWT = {
 }
 
 FRONTEND_URL = "localhost:3000"
+
+CELERY_BROKER_URL = f"{config('CELERY_BROKER_URL')}"  # DB 1 for Celery tasks
+CELERY_RESULT_BACKEND = f"{config('CELERY_BROKER_URL')}"  # Same DB for results
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_BROKER_CONNECTION_RETRY = True
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
+CELERY_TASK_TRACK_STARTED = True  # Useful for progress tracking
+CELERYD_MAX_MEMORY_PER_CHILD = 100000  # 100MB
+CELERYD_MAX_TASKS_PER_CHILD = 50
+
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'EverGreen Bank Documentation',
+    'DESCRIPTION': 'Evergreeen management system',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    
+    # OTHER SETTINGS
+}

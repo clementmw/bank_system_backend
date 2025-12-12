@@ -3,6 +3,7 @@ import string
 import datetime
 import uuid
 from rest_framework import pagination
+import secrets
 
 
 
@@ -44,10 +45,6 @@ def generate_customer_id():
 
     return id
 
-
-
-def generate_account_number():
-    pass
 
 def generate_temporary_password(): 
     characters = string.ascii_letters + string.digits

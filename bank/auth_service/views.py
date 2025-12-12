@@ -7,12 +7,12 @@ from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from .serializers import *
 from .models import *
-from .task import *
+# from .task import *
 from .utility import *
 from rest_framework.permissions import IsAuthenticated,BasePermission
+from django.db import transaction
 from rest_framework_simplejwt.tokens import RefreshToken
 import logging
-from django.db import transaction
 import os
 import re
 from django.utils import timezone
@@ -23,6 +23,9 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
+from django.contrib.auth.hashers import check_password
+from accounts.models import Account
+
 
 
 
@@ -232,6 +235,13 @@ class CustomerLoginView(APIView):
         
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class HandleSecurityQuestions(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        pass
+
 
 class ForgetpasswordView(APIView):
     # @method_decorator(ratelimit(key='post:email', rate='10/m', method='POST'))
@@ -309,13 +319,15 @@ class ConfirmOtpView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
 class ResetPasswordView(APIView):
     def post(self, request):
         try:
             data = request.data
             # print(data)
-
+            security_question = data.get('question')
+            security_answer = data.get('answer')
+            # account_number = data.get('account_number')
+            # card_expirey = data.get('card_expiry')
             otp = data.get('otp')
             password = data.get("password")
             email = request.data.get('email', '').lower()
@@ -327,6 +339,16 @@ class ResetPasswordView(APIView):
 
             if not user:
                 return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # step 1 : confirm security question and respective answer
+            if security_question and security_answer:
+                security_info = CustomerSecurityInformation.objects.filter(user=user).first()
+
+                if not security_info:
+                    return Response({"error": "Security information not found"}, status=status.HTTP_404_NOT_FOUND)
+
+                if not check_password(security_answer, security_info.security_answer_hash):
+                    return Response({"error": "Invalid security answer"}, status=status.HTTP_400_BAD_REQUEST)
 
             if not user.is_otp_valid():
                 return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
@@ -539,6 +561,8 @@ class HandleKYC(APIView):
         
         if file_obj.size > 5 * 1024 * 1024:  # 5MB limit
             return "File size exceeds 5MB limit"
+
+        # validate the specific documents that are must
         
         # Add file type validation if needed
         allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
@@ -905,15 +929,17 @@ class KYCReviewView(APIView):
             kyc_profile = get_object_or_404(KycProfile, id=kyc_profile_id)
             
             # Update KYC profile
-            kyc_profile.verification_status = new_status
-            kyc_profile.review_notes = notes
-            kyc_profile.verified_by = request.user
-            kyc_profile.verified_at = timezone.now()
-            kyc_profile.save()
+            with transaction.atomic():     
+                kyc_profile.verification_status = new_status
+                kyc_profile.review_notes = notes
+                kyc_profile.verified_by = request.user
+                kyc_profile.verified_at = timezone.now()
+                kyc_profile.save() 
+                             
 
-            # Update related documents status if needed
-            if new_status in ['APPROVED', 'REJECTED']:
-                self._update_documents_status(kyc_profile, new_status, request.user)
+                # Update related documents status if needed
+                if new_status in ['APPROVED', 'REJECTED']:
+                    self._update_documents_status(kyc_profile, new_status, request.user)
 
             # Send notification
             # send_kyc_status_update.delay(kyc_profile.id, status)
