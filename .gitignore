@@ -22,4 +22,5 @@ instance/
 .pytest_cache/
 .coverage  
 *_documents/  
-schema.yml  
+schema.yml 
+*.log 
