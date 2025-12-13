@@ -27,3 +27,8 @@ class AccountStatementSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountStatement
         fields = "__all__"
+
+class AccountLimitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AccountLimit
+        fields = "__all__"
