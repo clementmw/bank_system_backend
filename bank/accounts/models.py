@@ -61,6 +61,8 @@ class AccountType(BaseModel):
         default=list,
         help_text="List of customer tiers eligible for this account type"
     )
+    minimum_opening_balance = models.FloatField(default = 1000, validators=[MinValueValidator(0.0)])
+    auto_activate = models.BooleanField(default=True) #auto activates on receiving deposst
 
     def __str__(self):
         return f"{self.get_name_display()} ({self.code})"
@@ -249,6 +251,32 @@ class AccountLimit(BaseModel):
         permissions = [
             ("can_set_account_limits", "Can set account limits"),
             ("can_override_account_limits", "Can override account limits"),
+        ]
+
+class LimitOverrideRequest(BaseModel):
+    """
+    Requests for overriding account limits
+    """
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='limit_override_requests')
+    requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,related_name='limit_override_requests')
+    requested_at = models.DateTimeField(auto_now_add=True)
+    requested_daily_debit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
+    requested_daily_credit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
+    reason = models.TextField()
+    status = models.CharField(max_length=20, default='PENDING')
+
+    def __str__(self):
+        return f"Limit override request for  {self.requested_by}"
+
+    class Meta:
+        db_table = 'limit_override_request'
+        indexes = [
+            models.Index(fields=['account']),
+            models.Index(fields=['requested_by']),
+        ]
+        permissions = [
+            ("can_approve_limit_overrides", "Can approve limit override requests"),
+            ("can_view_limit_override_requests", "Can view limit override requests"),
         ]
 
 

@@ -326,6 +326,71 @@ class SessionLogs(BaseModel):
         ]
 
 
-class AuditLogs(BaseModel):
-    pass
 
+class AuditLog(BaseModel):
+    """
+    Audit trail for all user actions
+    """
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.PROTECT,
+        related_name='audit_logs'
+    )
+    action = models.CharField(
+        max_length=50,
+        help_text="Action type: CREATE, UPDATE, DELETE, VIEW"
+    )
+    resource_type = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Type of resource affected: Account, Transaction, etc."
+    )
+    resource_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="ID of the resource"
+    )
+    
+    # Request details
+    endpoint = models.CharField(max_length=255)
+    method = models.CharField(max_length=10,null = True, blank=True)
+    status_code = models.IntegerField(default=200)
+    
+    # Change tracking
+    old_values = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Values before change"
+    )
+    new_values = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Values after change"
+    )
+    
+    # Context
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+    
+    # Additional metadata
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Additional context like 'reason', 'notes'"
+    )
+    
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        db_table = 'audit_log'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['user', 'timestamp']),
+            models.Index(fields=['resource_type', 'resource_id']),
+            models.Index(fields=['action', 'timestamp']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.email} - {self.action} - {self.endpoint}"

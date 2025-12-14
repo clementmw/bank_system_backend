@@ -752,6 +752,7 @@ class HandleEmployeeAccount(APIView):
                 if serializer.is_valid():
                     user = serializer.save()
                     user.is_active = True  # Employees are active by default
+                    user.is_staff = True  # Employees are staff by default
                     user.save()
 
                     # get department based on role name
@@ -770,14 +771,14 @@ class HandleEmployeeAccount(APIView):
                     )
                     department = Role.objects.get(role_name=role_name).department_name
                     if department:
-                        dept_obj, created = Department.objects.get(name=department)
+                        dept_obj= Department.objects.get(name=department)
                         new_employee.department = dept_obj
                         new_employee.save()
                     #send the email to the employee
-                    try:
-                        send_employee_onboarding_email.delay(new_employee.id)
-                    except Exception as e:
-                        logger.error(f"Failed to send onboarding email to {email}: {str(e)}")
+                    # try:
+                    #     send_employee_onboarding_email.delay(new_employee.id)
+                    # except Exception as e:
+                    #     logger.error(f"Failed to send onboarding email to {email}: {str(e)}")
 
                     logger.info(f"New employee account created: {email} with role {role.role_name}")
 

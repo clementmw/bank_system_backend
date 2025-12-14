@@ -27,7 +27,7 @@ class HasAccountPermission(BasePermission):
             ).exists()
 
         # POST, PUT, PATCH, DELETE methods - manage permission required
-        elif request.method in ['POST', 'DELETE']:
+        elif request.method in ['POST', 'DELETE', 'PUT']:
             return user.role.permissions.filter(
                 codename__in=['can_modify_account_limits', 'can_freeze_accounts','can_close_account']
             ).exists()
