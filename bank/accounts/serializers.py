@@ -32,3 +32,8 @@ class AccountLimitSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountLimit
         fields = "__all__"
+
+class LimitOverrideRequestSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LimitOverrideRequest
+        fields = "__all__"

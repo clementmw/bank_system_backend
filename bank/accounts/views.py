@@ -19,7 +19,9 @@ from django.db.models import Q, Sum
 from decimal import Decimal
 from .metrics import *
 from .documentation import v1
+import logging
 
+logger = logging.getLogger(__name__)
 
 
 class IsCustomer(BasePermission):
@@ -32,6 +34,7 @@ class AccountView(APIView):
     def get(self, request):
         customer = CustomerProfile.objects.get(user=request.user)
         accounts = Account.objects.filter(customer=customer).order_by('-is_primary')
+
         serializer = AccountSerializer(accounts, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -50,9 +53,10 @@ class AccountView(APIView):
 
             # check if customer verification status in kyc
             try:
-                kystatus = KycProfile.objects.get(user=user, verification_status="VERIFIED")
-            except KycProfile.DoesNotExist:
-                return Response({"error": "KYC not verified"}, status=status.HTTP_400_BAD_REQUEST)
+                KycProfile.objects.filter(user=user, verification_status="VERIFIED")
+            except Exception as e:
+                logger.error(f"Customer {user.username} is not verified for account opening {e}")
+                return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
             # check if customer has any account in relation to the user
             account = Account.objects.filter(customer=customer)
@@ -71,6 +75,10 @@ class AccountView(APIView):
                 account.account_number = generate_account_number()
                 account.status = "PENDING_APPROVAL" 
                 account.is_primary = is_primary
+                account.is_joint_account = False
+                account.allow_debit = False
+                account.allow_credit = False
+                account.is_active = False
                 account.save()
                 accounts_created_total.inc()
 
@@ -200,14 +208,14 @@ class ApproveAccounts(APIView):
                                  "account_state": account.status
                                  }, status=status.HTTP_400_BAD_REQUEST)
             
-            # check if account is active 
-            if not account.is_active:
-                return Response({"error": "Account is not active"}, status=status.HTTP_400_BAD_REQUEST)
             
             # activvate acc
             account.status = "ACTIVE"
             account.approved_at = timezone.now()
             account.approved_by = user
+            account.is_active = True
+            account.allow_debit = True
+            account.allow_credit = True
             account.save()
 
             # update metrics
@@ -287,8 +295,11 @@ class RejectAccounts(APIView):
                              }, status=status.HTTP_200_OK)
 
         except Exception as e:
-
+            logger.error(f"Error rejecting account: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
         
 
 class FreezeAccounts(APIView):
@@ -319,8 +330,7 @@ class FreezeAccounts(APIView):
             # ensure account is active
             if not get_acc.is_active:
                 return Response({"error": "Account is not active"}, status=status.HTTP_400_BAD_REQUEST)
-            
-
+        
 
             get_acc.status = "FROZEN"
             get_acc.closed_by = user
@@ -341,6 +351,193 @@ class FreezeAccounts(APIView):
                              }, status=status.HTTP_200_OK)
         
         except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class HandleUnfreezingAccounts(APIView):
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+
+    def post(self, request, account_id):
+
+        """
+        bank staff unfreeze account
+        """
+
+        user = request.user
+
+        try:
+
+            get_acc = get_object_or_404(Account, id = account_id)
+
+            # confirm freeze reason is resolved
+
+            get_acc.status = "ACTIVE"
+            get_acc.closed_by = None
+            get_acc.closed_at = None
+            get_acc.closure_reason = ""
+            get_acc.allow_debit= True
+            get_acc.allow_credit = True
+            get_acc.is_active = True
+            get_acc.approved_by = user
+            get_acc.save()
+
+            # notofy client 
+            # send_account_unfrozen.delay(get_acc.id)
+
+
+        
+        except Exception as e:
+            logger.error(f"Error unfreezing account: {str(e)}")
+            return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class HandleRequestCloseAccount(APIView):
+    """
+    client request closure of an account 
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+    def post(self,request,account_id):
+        pass
+
+
+class handleCloseRequest(APIView):
+    """
+    bank staff handle closure for account request
+    """
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+    def post(self, request, account_id):
+        pass
+
+
+# handle limit mananagement
+
+class AccountLimitView(APIView):
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+
+    """
+    bank staff and customer can see the account limit for a specific account
+    """
+
+    def get(self, request,account_id):
+        try:
+            account = get_object_or_404(Account, id=account_id)
+
+            account_limit = get_object_or_404(AccountLimit,account=account)
+            # limit requests
+            limit_request = LimitOverrideRequest.objects.filter(account = account)
+            
+            serializer = AccountLimitSerializer(account_limit)
+            return Response({
+                "account_number":account.account_number,
+                "limits":serializer.data,
+                "request":LimitOverrideRequestSerializer(limit_request, many = True).data if limit_request else None
+                
+                }, status=status.HTTP_200_OK)
+
+        except AccountLimit.DoesNotExist:
+            return Response({"error": "Account limit not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error retrieving account limit: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def put(self, request, account_id):
+        """
+        bank staff can set new account limits
+        """
+        user = request.user
+        data = request.data
+        try:
+            account = get_object_or_404(Account, id=account_id)
+            
+            account_limit = get_object_or_404(AccountLimit,account=account)
+
+            reason = data.get('reason', '').strip()
+
+            if not reason:
+                return Response(
+                    {
+                        "error": "Limit override reason is required",
+                        "message": "Please provide a detailed reason for overriding this account limit"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        
+            # Serialize the updated account limit
+            serializer = AccountLimitSerializer(account_limit, data = request.data, partial = True)
+
+            if serializer.is_valid():
+                with transaction.atomic():
+                    account_limit.limit_override_approved_by = user
+                    account_limit.limit_override_reason = reason
+
+                    serializer.save()
+
+                    req = LimitOverrideRequest.objects.get(account = account)
+                    req.status = "APPROVED"
+
+                    # send out notification for changes
+                    # limit_change.delay(account.id)
+
+                    return Response({
+                        "message": "Account limit updated successfully",
+                        "account_number": account.account_number,
+                        "limits": serializer.data
+                    }, status=status.HTTP_200_OK)
+            
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"Error updating account limit: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class LimitOverrideRequest(APIView):
+    """
+    customer can request for limit override
+    """
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    def post(self, request, account_id):
+        
+        user = request.user
+        data = request.data
+        try:
+            account = get_object_or_404(Account, id=account_id)
+
+            account_limit = get_object_or_404(AccountLimit,account=account)
+
+            reason = data.get('reason', '').strip()
+
+            if not reason:
+                return Response(
+                    {
+                        "error": "Limit override reason is required",
+                        "message": "Please provide a detailed reason for overriding this account limit"
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # create a limit override request
+            override_request = LimitOverrideRequest.objects.create(
+                account_limit=account_limit,
+                requested_by=user,
+                requested_daily_debit_limit=data.get('requested_daily_debit_limit'),
+                requested_daily_credit_limit=data.get('requested_daily_credit_limit'),
+                requested_at = timezone.now(),
+                reason=reason,
+                status='PENDING'
+            )
+
+            # notify bank staff for approval
+            # notify_limit_override.delay(override_request.id)
+
+            return Response({
+                "message": "Limit override request submitted successfully",
+                "request_id": override_request.id,
+                "status": override_request.status
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Error creating limit override request: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 

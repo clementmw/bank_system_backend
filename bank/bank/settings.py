@@ -94,6 +94,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     # 'defender.middleware.FailedLoginMiddleware',  # Add Defender middleware
+    'auth_service.middleware.SimpleAuditMiddleware',  # Audit logging middleware
     "django_prometheus.middleware.PrometheusAfterMiddleware", #should be last
 
 
@@ -242,4 +243,23 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     
     # OTHER SETTINGS
+}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,  # <--- disables Django’s default loggers
+    "handlers": {
+        "file": {
+            "level": "DEBUG",
+            "class": "logging.FileHandler",
+            "filename": "debug.log",
+        },
+    },
+    "loggers": {
+        "bank": { 
+            "handlers": ["file"],
+            "level": "DEBUG",
+            "propagate": False,  # <--- don’t pass logs to parent loggers
+        },
+    },
 }
