@@ -253,15 +253,15 @@ class AccountLimit(BaseModel):
             ("can_override_account_limits", "Can override account limits"),
         ]
 
-class LimitOverrideRequest(BaseModel):
+class AccountLimitOverrideRequest(BaseModel):
     """
     Requests for overriding account limits
     """
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='limit_override_requests')
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='account_limit_override_requests')
     requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,related_name='limit_override_requests')
     requested_at = models.DateTimeField(auto_now_add=True)
-    requested_daily_debit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
-    requested_daily_credit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
+    requested_daily_debit_limit = models.FloatField(max_length=15, validators=[MinValueValidator(0.0)])
+    requested_daily_credit_limit = models.FloatField( max_length=15, validators=[MinValueValidator(0.0)])
     reason = models.TextField()
     status = models.CharField(max_length=20, default='PENDING')
 
@@ -269,7 +269,6 @@ class LimitOverrideRequest(BaseModel):
         return f"Limit override request for  {self.requested_by}"
 
     class Meta:
-        db_table = 'limit_override_request'
         indexes = [
             models.Index(fields=['account']),
             models.Index(fields=['requested_by']),

@@ -10,6 +10,11 @@ def generate_account_number():
     number = '1001' + ''.join(secrets.choice(string.digits) for _ in range(12))
     return number
 
+def generate_ref_id():
+    """Generate unique 12-character reference ID"""
+    ref_id = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+    return ref_id
+
 # def generate_account_statement(account, statement_type, period_start, period_end, generated_by=None):
 #     from accounts.models import AccountStatement  
 

@@ -35,5 +35,15 @@ class AccountLimitSerializer(serializers.ModelSerializer):
 
 class LimitOverrideRequestSerializer(serializers.ModelSerializer):
     class Meta:
-        model = LimitOverrideRequest
+        model = AccountLimitOverrideRequest
         fields = "__all__"
+
+class AccountHoldSerializer(serializers.ModelSerializer):
+    account_number = serializers.SerializerMethodField()
+    class Meta:
+        model = AccountHold
+        fields = ["account_number","hold_type","amount","reason","reference_id","placed_by","placed_at","released_by","released_at","expiry_date","is_released"] 
+
+    def get_account_number(self, obj):
+        return obj.account.account_number
+    
