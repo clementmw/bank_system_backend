@@ -24,3 +24,4 @@ instance/
 *_documents/  
 schema.yml 
 *.log 
+certs/
