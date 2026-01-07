@@ -5,16 +5,10 @@ from auth_service.models import *
 from django.db.models import Q
 from .utility import *
 import uuid
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
-class BaseModel(models.Model):
-    """Abstract base model with common fields"""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=True)
 
-    class Meta:
-        abstract = True
 class AccountType(BaseModel):
     """
     Defines different types of accounts available in the system
@@ -253,6 +247,22 @@ class AccountLimit(BaseModel):
             ("can_override_account_limits", "Can override account limits"),
         ]
 
+@receiver(post_save, sender=AccountLimit)
+def create_transaction_limits(sender, instance, created, **kwargs):
+    """Auto-create TransactionLimit tracking records"""
+    if created:
+        from transactions.models import TransactionLimit, TransactionType
+        
+        # Create daily tracking for each transaction type
+        for txn_type in [TransactionType.WITHDRAWAL, TransactionType.INTERNAL_TRANSFER]:
+            TransactionLimit.objects.create(
+                account=instance.account,
+                account_limit=instance,
+                transaction_type=txn_type,
+                max_amount=instance.daily_debit_limit,
+                max_count=instance.daily_transaction_count_limit,
+                reset_at=timezone.now().replace(hour=0, minute=0) + timedelta(days=1)
+            )
 class AccountLimitOverrideRequest(BaseModel):
     """
     Requests for overriding account limits
