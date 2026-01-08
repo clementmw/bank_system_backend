@@ -18,6 +18,7 @@ class AccountType(BaseModel):
         ('FIXED_DEPOSIT', 'Fixed Deposit'),
         ('BUSINESS', 'Business Account'),
     )
+
     
     name = models.CharField(max_length=50, unique=True, choices=ACCOUNT_TYPE_CHOICES)
     code = models.CharField(max_length=10, unique=True)
@@ -92,9 +93,14 @@ class Account(BaseModel):
         ('EUR', 'Euro'),
         ('GBP', 'British Pound'),
     )
+    ACCOUNT_CATEGORY_CHOICES = (
+        ('CUSTOMER', 'Customer Account'),
+        ('INTERNAL', 'Internal / System Account'),
+    )
     
+    category = models.CharField(max_length=20, choices=ACCOUNT_CATEGORY_CHOICES, default='CUSTOMER')
     account_number = models.CharField(max_length=20, unique=True, db_index=True)
-    customer = models.ForeignKey(CustomerProfile, on_delete=models.PROTECT, related_name='accounts')
+    customer = models.ForeignKey(CustomerProfile, on_delete=models.PROTECT, related_name='accounts', null=True,blank=True)
     account_type = models.ForeignKey(AccountType, on_delete=models.PROTECT, related_name='accounts')
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),validators=[MinValueValidator(Decimal('-999999999999.99'))])  # Allow negative for overdraf )
     available_balance = models.DecimalField(
@@ -148,7 +154,7 @@ class Account(BaseModel):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.account_number} - {self.customer.user.email}"
+        return f"{self.account_number} - {self.customer}"
 
     class Meta:
         db_table = 'account'
