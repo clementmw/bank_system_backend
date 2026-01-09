@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from .serializers import *
 from .models import *
-# from .task import *
+from .task import *
 from .utility import *
 from rest_framework.permissions import IsAuthenticated,BasePermission
 from django.db import transaction
@@ -107,7 +107,7 @@ class RegisterView(APIView):
                 return Response({'error': password_error[1]}, status=status.HTTP_400_BAD_REQUEST)
 
 
-            role = Role.objects.get(role_name="Customer")  # default role is customer
+            role = Role.objects.get(category="Customer")  # default role is customer
             
             with transaction.atomic():               
                 serializer = UserSerializer(data={**request.data, "email":email, "role": role.id})
@@ -204,7 +204,7 @@ class CustomerLoginView(APIView):
                     return Response({"error": "Invalid email or password"},
                                     status=status.HTTP_401_UNAUTHORIZED)
 
-                if user.role.role_name != "Customer":
+                if user.role.category != "Customer":
                     return Response({"error": "Access denied. Not a customer."}, #change to a more generic response 
                                     status=status.HTTP_403_FORBIDDEN)
 
@@ -253,7 +253,7 @@ class ForgetpasswordView(APIView):
             if user.is_superuser or user.is_staff:
                 pass
             
-            if user.role.role_name != "Customer":
+            if user.role.category != "Customer":
                 pass
                 
             else:
