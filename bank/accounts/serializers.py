@@ -17,10 +17,14 @@ class AccountSerializer(serializers.ModelSerializer):
         return obj.account_type.name
 
     def get_customer(self, obj):
+        if obj.customer is None:
+            return None
         return {
             "id": obj.customer.id,
-            "full_name": obj.customer.user.get_full_name(),
-            "email": obj.customer.user.email
+            "customer_name": obj.customer.user.get_full_name(),
+            "customer_tier": obj.customer.customer_tier,
+            "email": obj.customer.user.email,
+           
         }
 
 class AccountStatementSerializer(serializers.ModelSerializer):
