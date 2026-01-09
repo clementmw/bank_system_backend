@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'schema_viewer',
     'guardian',
+    'django_daraja'
     
 
 ]
@@ -123,26 +124,26 @@ WSGI_APPLICATION = 'bank.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'bank_db.sqlite3',
-    }
-}
-
 # DATABASES = {
 #     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': config('DB_NAME'),  # Read DB_NAME from .env
-#         'USER': config('DB_USER'),  # Read DB_USER from .env
-#         'PASSWORD': config('DB_PASSWORD'),  # Read DB_PASSWORD from .env
-#         'HOST': config('DB_HOST'),  # Read DB_HOST from .env
-#         'PORT': 5432,  # Default PostgreSQL port
-#         'OPTIONS': {
-#             'sslmode': 'require',  # Enforce SSL encryption
-#         },
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'bank_db.sqlite3',
 #     }
 # }
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('POSTGRES_NAME'),  # Read DB_NAME from .env
+        'USER': config('POSTGRES_USER'),  # Read DB_USER from .env
+        'PASSWORD': config('POSTGRES_PASSWORD'),  # Read DB_PASSWORD from .env
+        'HOST': config('POSTGRES_HOST'),  # Read DB_HOST from .env
+        'PORT': 5432,  # Default PostgreSQL port
+        'OPTIONS': {
+            'sslmode': 'require',  # Enforce SSL encryption
+        },
+    }
+}
 
 
 
@@ -256,10 +257,56 @@ LOGGING = {
         },
     },
     "loggers": {
-        "bank": { 
+        "transactions": { 
             "handlers": ["file"],
             "level": "DEBUG",
             "propagate": False,  # <--- don’t pass logs to parent loggers
         },
     },
 }
+
+MPESA_ENVIRONMENT = 'sandbox'
+MPESA_CONSUMER_KEY = config("MPESA_CONSUMER_KEY")
+MPESA_CONSUMER_SECRET = config("MPESA_CONSUMER_SECRET")
+MPESA_SHORTCODE = config("MPESA_EXPRESS_SHORTCODE")
+MPESA_PASSKEY = config("MPESA_PASSKEY")
+MPESA_INITIATOR_USERNAME= config("MPESA_INITIATOR_USERNAME")
+MPESA_INITIATOR_SECURITY_CREDENTIAL = config("MPESA_INITIATOR_SECURITY_CREDENTIAL")
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://sandbox.safaricom.co.ke",
+    "https://api.safaricom.co.ke",
+
+]
+
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",  # Allow custom Authorization headers
+    "x-api-key",  # Allow X-Requested-With header (useful for AJAX requests)
+    "accept",
+    "ngrok-skip-browser-warning",
+    "origin",
+    "x-custom-header",  # Example of a custom header you'd like to allow
+    "X-Frame-Options",  # Another example of a custom header
+]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_WHITELIST = [
+    "http://localhost:3000",  # Replace with your frontend URL
+    "https://sandbox.safaricom.co.ke",
+    "https://api.safaricom.co.ke",
+    "196.201.214.200",
+    "196.201.214.206",
+    "196.201.213.114",
+    "196.201.214.207",
+    "196.201.214.208",
+    "196.201.213.44",
+    "196.201.212.127",
+    "196.201.212.138",
+    "196.201.212.129",
+    "196.201.212.136",
+    "196.201.212.74",
+    "196.201.212.69"
+    
+]

@@ -35,6 +35,8 @@ class SimpleAuditMiddleware(MiddlewareMixin):
             200 <= response.status_code < 400):
             
             try:
+                if request.user.is_superuser:
+                    return response
                 self.create_audit_log(request, response)
             except Exception as e:
                 logger.error(f"Audit logging failed: {str(e)}", exc_info=True)

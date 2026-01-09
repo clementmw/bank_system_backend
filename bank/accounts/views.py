@@ -19,9 +19,15 @@ from django.db.models import Q, Sum
 from decimal import Decimal
 from .metrics import *
 from .documentation import v1
+
+
+#getorcreate
+
 import logging
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
+
 
 
 class IsCustomer(BasePermission):
@@ -422,7 +428,7 @@ class AccountLimitView(APIView):
 
             account_limit = get_object_or_404(AccountLimit,account=account)
             # limit requests
-            limit_request = LimitOverrideRequest.objects.filter(account = account)
+            limit_request = AccountLimitOverrideRequest.objects.filter(account = account)
             
             serializer = AccountLimitSerializer(account_limit)
             return Response({
@@ -437,95 +443,153 @@ class AccountLimitView(APIView):
         except Exception as e:
             logger.error(f"Error retrieving account limit: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+    
     def put(self, request, account_id):
         """
-        bank staff can set new account limits
+        Bank staff can set new account limits or reject override requests.
         """
         user = request.user
         data = request.data
         try:
             account = get_object_or_404(Account, id=account_id)
+            account_limit = get_object_or_404(AccountLimit, account=account)
             
-            account_limit = get_object_or_404(AccountLimit,account=account)
-
+            # The action can be "APPROVE" or "REJECT"
+            action = data.get('action', '').upper()
             reason = data.get('reason', '').strip()
 
-            if not reason:
+            if not action or action not in ["APPROVE", "REJECT"]:
                 return Response(
-                    {
-                        "error": "Limit override reason is required",
-                        "message": "Please provide a detailed reason for overriding this account limit"
-                    },
+                    {"error": "Invalid action", "message": "Action must be either 'APPROVE' or 'REJECT'"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-        
-            # Serialize the updated account limit
-            serializer = AccountLimitSerializer(account_limit, data = request.data, partial = True)
+            # Get the related override request, if it exists
+            try:
+                req = AccountLimitOverrideRequest.objects.get(account=account)
+            except AccountLimitOverrideRequest.DoesNotExist:
+                return Response(
+                    {"error": "No override request found for this account"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-            if serializer.is_valid():
-                with transaction.atomic():
-                    account_limit.limit_override_approved_by = user
+            with transaction.atomic():
+                if action == "APPROVE":
+                    if not reason:
+                        return Response(
+                            {"error": "Reason required for approval"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    serializer = AccountLimitSerializer(account_limit, data=request.data, partial=True)
+                    if serializer.is_valid():
+                        account_limit.limit_override_approved_by = user
+                        account_limit.limit_override_reason = reason
+                        serializer.save()
+
+                        req.status = "APPROVED"
+                        req.save()
+
+                        # Optional: send notification
+                        # limit_change.delay(account.id)
+
+                        return Response({
+                            "message": "Account limit updated successfully",
+                            "account_number": account.account_number,
+                            "limits": serializer.data
+                        }, status=status.HTTP_200_OK)
+                    
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                elif action == "REJECT":
+                    if not reason:
+                        return Response(
+                            {"error": "Reason required for rejection"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    req.status = "REJECTED"
+                    req.save()
                     account_limit.limit_override_reason = reason
-
-                    serializer.save()
-
-                    req = LimitOverrideRequest.objects.get(account = account)
-                    req.status = "APPROVED"
-
-                    # send out notification for changes
-                    # limit_change.delay(account.id)
+                    account_limit.limit_override_approved_by= user
+                    account_limit.save()
 
                     return Response({
-                        "message": "Account limit updated successfully",
+                        "message": "Account limit override request rejected",
                         "account_number": account.account_number,
-                        "limits": serializer.data
+                        "request_status": req.status,
+                        "reason": reason
                     }, status=status.HTTP_200_OK)
-            
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         except Exception as e:
             logger.error(f"Error updating account limit: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class LimitOverrideRequest(APIView):
+class HandleRequestOverride(APIView):
     """
     customer can request for limit override
     """
     permission_classes = [IsAuthenticated, IsCustomer]
 
-    def post(self, request, account_id):
-        
-        user = request.user
-        data = request.data
+    def get(self,request,account_id):
+        """
+        get the status of the limit if applicable
+
+        """
         try:
+            user = request.user
+
+            account = get_object_or_404(Account, id=account_id)
+            acc_lmt = get_object_or_404(AccountLimit, account = account)
+
+            account_limit = get_object_or_404(AccountLimitOverrideRequest, account=account)
+
+            return Response({
+                "account_number": account.account_number,
+                "status": account_limit.status,
+                "reason": acc_lmt.limit_override_reason if acc_lmt.limit_override_reason else None,
+
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self, request, account_id):
+        try:
+            user = request.user
+            data = request.data
             account = get_object_or_404(Account, id=account_id)
 
-            account_limit = get_object_or_404(AccountLimit,account=account)
 
             reason = data.get('reason', '').strip()
-
+            daily_debit = data.get('requested_daily_debit')
+            daily_credit = data.get('requested_daily_credit')
+            
+            # Validation
+            if not daily_debit or not daily_credit:
+                return Response(
+                    {"error": "Daily debit and credit limits are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             if not reason:
                 return Response(
                     {
                         "error": "Limit override reason is required",
-                        "message": "Please provide a detailed reason for overriding this account limit"
+                        "message": "Please provide a detailed reason for requesting overriding this account limit"
                     },
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
             # create a limit override request
-            override_request = LimitOverrideRequest.objects.create(
-                account_limit=account_limit,
+            override_request = AccountLimitOverrideRequest.objects.create(
+                account=account,
                 requested_by=user,
-                requested_daily_debit_limit=data.get('requested_daily_debit_limit'),
-                requested_daily_credit_limit=data.get('requested_daily_credit_limit'),
-                requested_at = timezone.now(),
                 reason=reason,
-                status='PENDING'
+                requested_daily_debit_limit=daily_debit,
+                requested_daily_credit_limit=daily_credit
             )
+
 
             # notify bank staff for approval
             # notify_limit_override.delay(override_request.id)
@@ -539,10 +603,111 @@ class LimitOverrideRequest(APIView):
         except Exception as e:
             logger.error(f"Error creating limit override request: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            
+
+class HandleAccountHold(APIView):
+    """
+    staff can get all accounts on hhold with the respecctive reasons 
+    """
+    permission_classes = [IsAuthenticated, HasAccountPermission]
+
+    def get(self, request, account_id):
+        try:
+            account = get_object_or_404(Account, id=account_id)
+
+            # get all holds for this account
+            holds = AccountHold.objects.filter(account=account)
+
+            # filters and searches
+            hold_type = request.query_params.get('hold_type')
+            is_released = request.query_params.get('is_released')
+            search = request.query_params.get('search')
+
+            if hold_type:
+                holds = holds.filter(hold_type=hold_type)
+            
+            if is_released is not None:
+                holds = holds.filter(is_released=is_released.lower() == 'true')
+            if search:
+                holds = holds.filter(
+                    Q(reason__icontains=search) |
+                    Q(reference_id__icontains=search) |
+                    Q(placed_by__username__icontains=search) |
+                    Q(released_by__username__icontains=search) |
+                    Q(account__account_number__icontains=search)
+                )
+            pagination = CustomPagination()
+            pagin_respo = pagination.paginate_queryset(holds, request)
+            
+            serializer = AccountHoldSerializer(pagin_respo, many=True)
+
+            return pagination.get_paginated_response(serializer.data)
+
+        except Exception as e:
+            logger.error(f"Error retrieving account holds: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def post(self,request,account_id):
+        """
+        staff can place a hold on an account
+        """
+        user = request.user
+        data = request.data
+
+        try:
+
+            hold_type = data.get('hold_type')
+            amount = data.get('amount')
+            reason = data.get('reason', '').strip()
+            expiry_date = data.get('expiry_date')
+
+            # Validation
+            if not hold_type or not amount or not reason :
+                return Response(
+                    {"error": "All fields are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            with transaction.atomic():
+                account = Account.objects.select_for_update().get(id=account_id)
+                #check available balance and validate the amount is there and then subtract it temporarry
+                if account.balance < Decimal(amount):
+                    return Response(
+                        {"error": "Insufficient balance to place this hold"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                reference_id = generate_ref_id()
+                hold = AccountHold.objects.create(
+                    account=account,
+                    hold_type=hold_type,
+                    amount=amount,
+                    reason=reason,
+                    reference_id=reference_id,
+                    placed_by=user,
+                    expiry_date=expiry_date
+                )
+
+                account.available_balance -= Decimal(amount)
+                account.save()
+
+                return Response({
+                    "message": "Account hold placed successfully",
+                    "hold_id": hold.id,
+                    "account_number": account.account_number,
+                    "hold_type": hold.hold_type,
+                    "amount": hold.amount,
+                    "reason": hold.reason,
+                    "reference_id": hold.reference_id,
+                }, status=status.HTTP_201_CREATED)
+
+                # create a notification for client 
+                #accounthold.delay(hold.id)
+
+        except Exception as e:
+            logger.error(f"Error placing account hold: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
+# task  beneficially and joint account views
 
 
 

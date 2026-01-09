@@ -5,16 +5,10 @@ from auth_service.models import *
 from django.db.models import Q
 from .utility import *
 import uuid
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
-class BaseModel(models.Model):
-    """Abstract base model with common fields"""
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    is_active = models.BooleanField(default=True)
 
-    class Meta:
-        abstract = True
 class AccountType(BaseModel):
     """
     Defines different types of accounts available in the system
@@ -24,6 +18,7 @@ class AccountType(BaseModel):
         ('FIXED_DEPOSIT', 'Fixed Deposit'),
         ('BUSINESS', 'Business Account'),
     )
+
     
     name = models.CharField(max_length=50, unique=True, choices=ACCOUNT_TYPE_CHOICES)
     code = models.CharField(max_length=10, unique=True)
@@ -98,9 +93,14 @@ class Account(BaseModel):
         ('EUR', 'Euro'),
         ('GBP', 'British Pound'),
     )
+    ACCOUNT_CATEGORY_CHOICES = (
+        ('CUSTOMER', 'Customer Account'),
+        ('INTERNAL', 'Internal / System Account'),
+    )
     
+    category = models.CharField(max_length=20, choices=ACCOUNT_CATEGORY_CHOICES, default='CUSTOMER')
     account_number = models.CharField(max_length=20, unique=True, db_index=True)
-    customer = models.ForeignKey(CustomerProfile, on_delete=models.PROTECT, related_name='accounts')
+    customer = models.ForeignKey(CustomerProfile, on_delete=models.PROTECT, related_name='accounts', null=True,blank=True)
     account_type = models.ForeignKey(AccountType, on_delete=models.PROTECT, related_name='accounts')
     balance = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'),validators=[MinValueValidator(Decimal('-999999999999.99'))])  # Allow negative for overdraf )
     available_balance = models.DecimalField(
@@ -154,7 +154,7 @@ class Account(BaseModel):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.account_number} - {self.customer.user.email}"
+        return f"{self.account_number} - {self.customer}"
 
     class Meta:
         db_table = 'account'
@@ -253,15 +253,31 @@ class AccountLimit(BaseModel):
             ("can_override_account_limits", "Can override account limits"),
         ]
 
-class LimitOverrideRequest(BaseModel):
+@receiver(post_save, sender=AccountLimit)
+def create_transaction_limits(sender, instance, created, **kwargs):
+    """Auto-create TransactionLimit tracking records"""
+    if created:
+        from transactions.models import TransactionLimit, TransactionType
+        
+        # Create daily tracking for each transaction type
+        for txn_type in [TransactionType.WITHDRAWAL, TransactionType.INTERNAL_TRANSFER]:
+            TransactionLimit.objects.create(
+                account=instance.account,
+                account_limit=instance,
+                transaction_type=txn_type,
+                max_amount=instance.daily_debit_limit,
+                max_count=instance.daily_transaction_count_limit,
+                reset_at=timezone.now().replace(hour=0, minute=0) + timedelta(days=1)
+            )
+class AccountLimitOverrideRequest(BaseModel):
     """
     Requests for overriding account limits
     """
-    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='limit_override_requests')
+    account = models.ForeignKey(Account, on_delete=models.CASCADE, related_name='account_limit_override_requests')
     requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,related_name='limit_override_requests')
     requested_at = models.DateTimeField(auto_now_add=True)
-    requested_daily_debit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
-    requested_daily_credit_limit = models.DecimalField(max_digits=15, decimal_places=2,validators=[MinValueValidator(Decimal('0.00'))])
+    requested_daily_debit_limit = models.FloatField(max_length=15, validators=[MinValueValidator(0.0)])
+    requested_daily_credit_limit = models.FloatField( max_length=15, validators=[MinValueValidator(0.0)])
     reason = models.TextField()
     status = models.CharField(max_length=20, default='PENDING')
 
@@ -269,7 +285,6 @@ class LimitOverrideRequest(BaseModel):
         return f"Limit override request for  {self.requested_by}"
 
     class Meta:
-        db_table = 'limit_override_request'
         indexes = [
             models.Index(fields=['account']),
             models.Index(fields=['requested_by']),

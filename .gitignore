@@ -24,3 +24,5 @@ instance/
 *_documents/  
 schema.yml 
 *.log 
+certs/
+workflow.md

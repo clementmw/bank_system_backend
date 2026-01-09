@@ -25,6 +25,8 @@ from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
 from django.contrib.auth.hashers import check_password
 from accounts.models import Account
+from django.contrib.auth.models import update_last_login
+
 
 
 
@@ -210,14 +212,8 @@ class CustomerLoginView(APIView):
                     return Response({"error": "Account is inactive. Please verify your email."}, #change to a more generic response 
                                     status=status.HTTP_403_FORBIDDEN)
 
-                # check kyc verification status
 
-                # if  user.kyc_profile.verification_status == "PENDING":
-                #     return Response({"error": "Please upload KYC."}, status=status.HTTP_403_FORBIDDEN)
-                
-                # if not user.kyc_profile.verification_status == "VERIFIED":
-                #     return Response({"error": "Account is not verified. Please upload KYC."}, 
-                #                     status=status.HTTP_403_FORBIDDEN)
+                update_last_login(None, user)
 
                 refresh = RefreshToken.for_user(user)
                 user_data = serialize_full_user(user)
@@ -631,8 +627,8 @@ class StaffLoginView(APIView):
                     ip_address=request.META.get('REMOTE_ADDR'),
                     browser_agent=request.META.get('HTTP_USER_AGENT')
                 )
-                
-                
+                # update lastlogin
+                update_last_login(None, user)
 
                 refresh = RefreshToken.for_user(user)
                 user_data = serialize_full_user(user)
@@ -752,7 +748,7 @@ class HandleEmployeeAccount(APIView):
                 if serializer.is_valid():
                     user = serializer.save()
                     user.is_active = True  # Employees are active by default
-                    user.is_staff = True  # Employees are staff by default
+                    user.is_staff = True  # Employees are staff by default switch up later for spec
                     user.save()
 
                     # get department based on role name

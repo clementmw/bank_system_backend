@@ -1,11 +1,84 @@
-version: '3.9'
-
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: bank_db
+    env_file:
+      - .env
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - monitoring
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: bank_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - monitoring
+
+  redis:
+    image: redis:7-alpine
+    container_name: bank_redis
+    networks:
+      - monitoring
+
   django:
     build: .
     container_name: bank_django
+    command: >
+      sh -c "
+      python manage.py collectstatic --noinput &&
+      gunicorn bank.wsgi:application --bind 0.0.0.0:8000
+      "
     ports:
       - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - rabbitmq
+      - redis
+    networks:
+      - monitoring
+
+  celery_worker:
+    build: .
+    container_name: bank_celery_worker
+    command: celery -A bank worker -l info --prefetch-multiplier=1
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      db:
+        condition: service_started
+    networks:
+      - monitoring
+
+  flower:
+    build: .
+    container_name: bank_celery_flower
+    command: celery -A bank flower --port=5555 --basic_auth=${FLOWER_USER}:${FLOWER_PASSWORD}
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    depends_on:
+      - rabbitmq
+      - redis
     networks:
       - monitoring
 
@@ -30,3 +103,7 @@ services:
 networks:
   monitoring:
     driver: bridge
+
+volumes:
+  db_data:
+  rabbitmq_data:
