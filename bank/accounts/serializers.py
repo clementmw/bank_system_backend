@@ -37,6 +37,27 @@ class AccountLimitSerializer(serializers.ModelSerializer):
         model = AccountLimit
         fields = "__all__"
 
+    def update(self, instance, validated_data):
+        from transactions.models import TransactionLimit, TransactionType
+
+        # Update AccountLimit first
+        instance = super().update(instance, validated_data)
+
+        # Sync related TransactionLimit records
+        TransactionLimit.objects.filter(
+            account_limit=instance,
+            transaction_type__in=[
+                TransactionType.WITHDRAWAL,
+                TransactionType.INTERNAL_TRANSFER
+            ]
+        ).update(
+            max_amount=instance.daily_debit_limit,
+            max_count=instance.daily_transaction_count_limit
+        )
+
+        return instance
+
+
 class LimitOverrideRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model = AccountLimitOverrideRequest

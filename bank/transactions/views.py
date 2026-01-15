@@ -3,6 +3,7 @@ from .models import *
 from .serializers import *
 from .services.utility import *
 # from .tasks import *
+from .metrics import *
 from .permissions import *
 from django.http import HttpResponse
 from auth_service.models import *
@@ -24,6 +25,7 @@ from .tasks import *
 from .services import utility,validations
 from django.db import transaction as db_transaction
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -582,6 +584,52 @@ class HandleInternalTransaction(APIView):
 
         fee = calculate_transaction_fee(amount, transaction_type)
         logger.debug(f"Transaction fee calculated: {fee}")
+
+        fraud_log = None
+        fraud_data = None
+
+        try:
+            fraud_response = requests.post(
+                'http://localhost:8080/api/v1.0/fraud/check',
+
+                json = {
+                    'amount':float(amount),
+                    'account_id':source_acc.account_number,
+                    'destination_account':dest_acc.account_number,
+                    'transaction_type':transaction_type
+                },
+                timeout=0.1 
+            )
+
+            fraud_data = fraud_response.json()
+
+            # save the response from the fr
+            from fraud_service.models import FraudDetection
+            fraud_log = FraudDetection.objects.create(
+                account_number = source_acc.account_number,
+                amount = amount,
+                risk_score = fraud_data.get('risk_score',0),
+                decision = fraud_data.get('decision','APPROVE'),
+                reason = fraud_data.get('reason',''),
+                flags = fraud_data.get('flags',[]),
+                processing_time_ms = int(fraud_data.get('processing_time_ms','0ms').replace('ms',''))                       
+            )
+            logger.info(f'fraud log created and saved {fraud_data}')
+
+            if fraud_data['decision'] == 'BLOCK':
+                return Response({
+                    "error":fraud_data['reason']
+                }, status=status.HTTP_403_FORBIDDEN)
+
+        
+        except Exception as e:
+            logger.error(f"Error checking fraud detection: {str(e)}")
+            #update failed metrics counnt for fraud
+            fraud_detection_failed_total.labels(
+                fraud_type=transaction_type,
+                failure_reason='service_unavailable'
+            ).inc()
+            pass
         
         try:
             # check available balance
@@ -647,14 +695,18 @@ class HandleInternalTransaction(APIView):
                     destination_account=dest_acc,
                     amount=amount,
                     transaction_type=transaction_type,
-                    trans_status=TransactionStatus.PENDING,
                     idempotency_key=idempotency_Key,
+                    trans_status=TransactionStatus.PENDING,
                     metadata={'request_params': request.data},
                     initiated_by=user,
                     transaction_ref=generate_transaction_ref(),
                     fee = fee
                 )
                 logger.debug(f"Transaction object created: {trans.id}")
+
+                if fraud_log:
+                    fraud_log.transaction = trans
+                    fraud_log.save(update_fields=['transaction'])
                 
                 # execute transaction
                 logger.debug(f"Executing transaction")
@@ -664,7 +716,8 @@ class HandleInternalTransaction(APIView):
                 return Response({
                     "message": "Transaction successful",
                     "transaction_id": executed_transaction.id,
-                    "transaction_ref": executed_transaction.transaction_ref
+                    "transaction_ref": executed_transaction.transaction_ref,
+                    "fraud_check": fraud_data['reason'] if fraud_data else None
                 }, status=status.HTTP_200_OK)
                 
         except (ValidationError, PermissionDenied, LimitExceeded) as e:

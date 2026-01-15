@@ -444,7 +444,7 @@ class AccountLimitView(APIView):
             logger.error(f"Error retrieving account limit: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
-    def put(self, request, account_id):
+    def put(self, request, account_id,request_id):
         """
         Bank staff can set new account limits or reject override requests.
         """
@@ -457,6 +457,8 @@ class AccountLimitView(APIView):
             # The action can be "APPROVE" or "REJECT"
             action = data.get('action', '').upper()
             reason = data.get('reason', '').strip()
+            
+            
 
             if not action or action not in ["APPROVE", "REJECT"]:
                 return Response(
@@ -466,7 +468,12 @@ class AccountLimitView(APIView):
 
             # Get the related override request, if it exists
             try:
-                req = AccountLimitOverrideRequest.objects.get(account=account)
+                req = AccountLimitOverrideRequest.objects.filter(account=account, id = request_id).first()
+                if req.status == 'APPROVED':
+                    return Response(
+                        {"error": "This override request has already been approved"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
             except AccountLimitOverrideRequest.DoesNotExist:
                 return Response(
                     {"error": "No override request found for this account"},
