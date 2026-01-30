@@ -19,4 +19,9 @@ class TransactionAdmin(admin.ModelAdmin):
 class TransactionLimitAdmin(admin.ModelAdmin):
     list_display =[field.name for field in TransactionLimit._meta.fields]
 
+@admin.register(LedgerEntry)
+class LedgerEntryAdmin(admin.ModelAdmin):
+    list_display = [field.name for field in LedgerEntry._meta.fields]
+
+
     

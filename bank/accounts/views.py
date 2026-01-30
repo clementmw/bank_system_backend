@@ -59,9 +59,12 @@ class AccountView(APIView):
 
             # check if customer verification status in kyc
             try:
-                KycProfile.objects.filter(user=user, verification_status="VERIFIED")
+                kyc_pr = KycProfile.objects.get(user=user)
+                if kyc_pr.verification_status != "APPROVED":
+                    return Response({"error": "Customer KYC not verified"}, status=status.HTTP_400_BAD_REQUEST)
+
             except Exception as e:
-                logger.error(f"Customer {user.username} is not verified for account opening {e}")
+                logger.error(f"Customer {user} is not verified for account opening {e}")
                 return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
             # check if customer has any account in relation to the user

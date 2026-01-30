@@ -777,7 +777,7 @@ class HandleTransactionHistory(APIView):
         queryset = self._apply_filters(queryset, request)
         
         # Paginate results
-        paginator = CursorPagination(page_size=50, max_page_size=1)
+        paginator = CursorPagination(page_size=50, max_page_size=100)
         results, next_cursor, previous_cursor, has_more = paginator.paginate_queryset(
             queryset, 
             request

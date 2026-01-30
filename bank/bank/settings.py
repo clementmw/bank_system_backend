@@ -124,26 +124,26 @@ WSGI_APPLICATION = 'bank.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'bank_db.sqlite3',
-#     }
-# }
-
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('POSTGRES_NAME'),  # Read DB_NAME from .env
-        'USER': config('POSTGRES_USER'),  # Read DB_USER from .env
-        'PASSWORD': config('POSTGRES_PASSWORD'),  # Read DB_PASSWORD from .env
-        'HOST': config('POSTGRES_HOST'),  # Read DB_HOST from .env
-        'PORT': 5432,  # Default PostgreSQL port
-        'OPTIONS': {
-            'sslmode': 'require',  # Enforce SSL encryption
-        },
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'bank_db.sqlite3',
     }
 }
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': config('POSTGRES_NAME'),  # Read DB_NAME from .env
+#         'USER': config('POSTGRES_USER'),  # Read DB_USER from .env
+#         'PASSWORD': config('POSTGRES_PASSWORD'),  # Read DB_PASSWORD from .env
+#         'HOST': config('POSTGRES_HOST'),  # Read DB_HOST from .env
+#         'PORT': 5432,  # Default PostgreSQL port
+#         'OPTIONS': {
+#             'sslmode': 'require',  # Enforce SSL encryption
+#         },
+#     }
+# }
 
 
 
@@ -252,7 +252,7 @@ SPECTACULAR_SETTINGS = {
 
 LOGGING = {
     "version": 1,
-    "disable_existing_loggers": False,  # <--- disables Django’s default loggers
+    "disable_existing_loggers": False,  
     "handlers": {
         "file": {
             "level": "DEBUG",
@@ -264,7 +264,7 @@ LOGGING = {
         "transactions": { 
             "handlers": ["file"],
             "level": "DEBUG",
-            "propagate": False,  # <--- don’t pass logs to parent loggers
+            "propagate": False,
         },
     },
 }
@@ -278,7 +278,7 @@ MPESA_INITIATOR_USERNAME= config("MPESA_INITIATOR_USERNAME")
 MPESA_INITIATOR_SECURITY_CREDENTIAL = config("MPESA_INITIATOR_SECURITY_CREDENTIAL")
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
+    "http://localhost:4000",
     "http://localhost:5173",
     "https://sandbox.safaricom.co.ke",
     "https://api.safaricom.co.ke",
@@ -297,7 +297,7 @@ CORS_ALLOW_HEADERS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_WHITELIST = [
-    "http://localhost:3000",  # Replace with your frontend URL
+    "http://localhost:4000",  # Replace with your frontend URL
     "https://sandbox.safaricom.co.ke",
     "https://api.safaricom.co.ke",
     "196.201.214.200",

@@ -369,36 +369,30 @@ class ResetPasswordView(APIView):
             return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 class HandleKYC(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self,request):
+    def get(self, request):
         """
-        customer can see their upploed data
+        customer can see their uploaded data
         """
-
         user = request.user
 
         if user.role.role_name != "Customer":
             return Response({"error": "Access for KYC denied"}, status=status.HTTP_403_FORBIDDEN)
 
-        
         try:
             kyc_profile = KycProfile.objects.get(user=user)
-            
             kyc_documents = KycDocument.objects.filter(kyc_profile=kyc_profile)
 
             if not kyc_documents:
                 return Response({"error": "kyc_documents not found"}, status=status.HTTP_404_NOT_FOUND)
-            
 
             kyc_data = KycProfileSerializer(kyc_profile).data
             kyc_data['documents'] = KycDocumentSerializer(kyc_documents, many=True).data
 
             return Response(kyc_data, status=status.HTTP_200_OK)
 
-        
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -420,7 +414,7 @@ class HandleKYC(APIView):
 
             print(request.data)
 
-            # Extract documents data
+            # Extract documents data - FIXED METHOD
             documents_data = self._extract_documents_data(request)
 
             if not documents_data:
@@ -438,9 +432,7 @@ class HandleKYC(APIView):
                 customer_profile.save()
 
                 # Create or get KYC profile
-                kyc_profile= KycProfile.objects.get(
-                    user=user,
-                )
+                kyc_profile = KycProfile.objects.get(user=user)
 
                 # Handle document uploads
                 saved_documents = []
@@ -449,8 +441,6 @@ class HandleKYC(APIView):
                 for doc_data in documents_data:
                     document_type = doc_data['document_type']
                     file_obj = doc_data['file']
-                    # document_number = doc_data.get('document_number')
-                    # expiry_date = doc_data.get('expiry_date')
 
                     error = self._validate_document(file_obj, document_type)
                     if error:
@@ -467,8 +457,6 @@ class HandleKYC(APIView):
                             document_type=document_type,
                             defaults={
                                 'document_upload': file_obj,
-                                # 'document_number': document_number,
-                                # 'expiry_date': expiry_date,
                                 'status': 'PENDING'
                             }
                         )
@@ -476,7 +464,6 @@ class HandleKYC(APIView):
                         saved_documents.append({
                             "document_type": document_type,
                             "file_name": file_obj.name,
-                            # "document_number": document_number,
                             "status": "uploaded"
                         })
 
@@ -511,41 +498,43 @@ class HandleKYC(APIView):
                     response_data["partial_errors"] = errors
                     response_data["message"] = "KYC submitted with some errors"
 
-                # Notify admin
-                # send_new_kyc.delay(kyc_profile.id)
-
                 return Response(response_data, status=status.HTTP_200_OK)
 
         except CustomerProfile.DoesNotExist:
             return Response({"error": "Customer profile not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            logger.error(f"KYC submission error for user {user.id}: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def _extract_documents_data(self, request):
-        """Extract documents data from request"""
+        """Extract documents data from request - FIXED VERSION"""
         documents_data = []
         
-        # Method 1: Array format
-        document_types = request.data.getlist('document_types')
+        # For FormData, use request.POST.getlist() for form fields
+        # and request.FILES.getlist() for files
+        document_types = request.POST.getlist('document_types')
         document_files = request.FILES.getlist('documents')
-        # expiry_dates = request.data.getlist('expiry_dates')
         
-        if document_types and document_files and len(document_types) == len(document_files):
-            for i, (doc_type, file_obj) in enumerate(zip(document_types, document_files)):
-                documents_data.append({
-                    'document_type': doc_type,
-                    'file': file_obj,
-                    # 'expiry_date': expiry_dates[i] if i < len(expiry_dates) else None
-                })
-        else:
-            # Method 2: Individual fields
+        # Check if we have matching types and files
+        if document_types and document_files:
+            if len(document_types) == len(document_files):
+                for doc_type, file_obj in zip(document_types, document_files):
+                    documents_data.append({
+                        'document_type': doc_type,
+                        'file': file_obj,
+                    })
+            else:
+                # Mismatch in arrays - log for debugging
+                print(f"Mismatch: {len(document_types)} types, {len(document_files)} files")
+        
+        # Fallback: Try to extract individual fields (alternative format)
+        if not documents_data:
             for key, file_obj in request.FILES.items():
                 if key.startswith('document_'):
                     doc_type = key.replace('document_', '').upper()
                     documents_data.append({
                         'document_type': doc_type,
                         'file': file_obj,
-                        'expiry_date': request.data.get(f'expiry_date_{doc_type}')
                     })
         
         return documents_data
@@ -557,17 +546,14 @@ class HandleKYC(APIView):
         
         if file_obj.size > 5 * 1024 * 1024:  # 5MB limit
             return "File size exceeds 5MB limit"
-
-        # validate the specific documents that are must
         
-        # Add file type validation if needed
+        # Validate file extensions
         allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx']
         file_extension = os.path.splitext(file_obj.name)[1].lower()
         if file_extension not in allowed_extensions:
             return f"File type not allowed. Allowed types: {', '.join(allowed_extensions)}"
         
-        return None
-    
+        return None  
 class HandleLogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
