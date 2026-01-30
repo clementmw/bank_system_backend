@@ -12,6 +12,7 @@ urlpatterns = [
    path('api/v1.0/analysis/', include('analytics.urls')),
    path('api/v1.0/auth/', include('auth_service.urls')),
    path('api/v1.0/transactions/', include('transactions.urls')),
+   path('api/v1.0/fraud/', include('fraud_service.urls')),
 
 
    

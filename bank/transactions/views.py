@@ -3,6 +3,7 @@ from .models import *
 from .serializers import *
 from .services.utility import *
 # from .tasks import *
+from .metrics import *
 from .permissions import *
 from django.http import HttpResponse
 from auth_service.models import *
@@ -24,6 +25,7 @@ from .tasks import *
 from .services import utility,validations
 from django.db import transaction as db_transaction
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +121,7 @@ def validate_limits(account, amount, transaction_type):
         transaction_type=transaction_type,
         limit_type='DAILY',
         is_active=True
-    ).select_for_update().first()
+    ).first()
 
     if not daily_limit:
         logger.error(f"Transaction limit not configured for account {account.id}")
@@ -402,14 +404,14 @@ def update_transaction_limits(transaction):
 
 
 
-@db_transaction.atomic
+@transaction.atomic
 def execute_transaction(transaction_obj):
     """
     Executes the financial transaction with proper locking
     """
     logger.info(f"Starting transaction execution for transaction {transaction_obj.id}")
     
-    # Set isolation level
+    # # Set isolation level
     # db_transaction.set_isolation_level('read committed')
     
     # Step 1: Lock accounts (order by ID to prevent deadlock)
@@ -582,6 +584,52 @@ class HandleInternalTransaction(APIView):
 
         fee = calculate_transaction_fee(amount, transaction_type)
         logger.debug(f"Transaction fee calculated: {fee}")
+
+        fraud_log = None
+        fraud_data = None
+
+        try:
+            fraud_response = requests.post(
+                'http://localhost:8080/api/v1.0/fraud/check',
+
+                json = {
+                    'amount':float(amount),
+                    'account_id':source_acc.account_number,
+                    'destination_account':dest_acc.account_number,
+                    'transaction_type':transaction_type
+                },
+                timeout=0.1 
+            )
+
+            fraud_data = fraud_response.json()
+
+            # save the response from the fr
+            from fraud_service.models import FraudDetection
+            fraud_log = FraudDetection.objects.create(
+                account_number = source_acc.account_number,
+                amount = amount,
+                risk_score = fraud_data.get('risk_score',0),
+                decision = fraud_data.get('decision','APPROVE'),
+                reason = fraud_data.get('reason',''),
+                flags = fraud_data.get('flags',[]),
+                processing_time_ms = int(fraud_data.get('processing_time_ms','0ms').replace('ms',''))                       
+            )
+            logger.info(f'fraud log created and saved {fraud_data}')
+
+            if fraud_data['decision'] == 'BLOCK':
+                return Response({
+                    "error":fraud_data['reason']
+                }, status=status.HTTP_403_FORBIDDEN)
+
+        
+        except Exception as e:
+            logger.error(f"Error checking fraud detection: {str(e)}")
+            #update failed metrics counnt for fraud
+            fraud_detection_failed_total.labels(
+                fraud_type=transaction_type,
+                failure_reason='service_unavailable'
+            ).inc()
+            pass
         
         try:
             # check available balance
@@ -647,14 +695,18 @@ class HandleInternalTransaction(APIView):
                     destination_account=dest_acc,
                     amount=amount,
                     transaction_type=transaction_type,
-                    trans_status=TransactionStatus.PENDING,
                     idempotency_key=idempotency_Key,
+                    trans_status=TransactionStatus.PENDING,
                     metadata={'request_params': request.data},
                     initiated_by=user,
                     transaction_ref=generate_transaction_ref(),
                     fee = fee
                 )
                 logger.debug(f"Transaction object created: {trans.id}")
+
+                if fraud_log:
+                    fraud_log.transaction = trans
+                    fraud_log.save(update_fields=['transaction'])
                 
                 # execute transaction
                 logger.debug(f"Executing transaction")
@@ -664,7 +716,8 @@ class HandleInternalTransaction(APIView):
                 return Response({
                     "message": "Transaction successful",
                     "transaction_id": executed_transaction.id,
-                    "transaction_ref": executed_transaction.transaction_ref
+                    "transaction_ref": executed_transaction.transaction_ref,
+                    "fraud_check": fraud_data['reason'] if fraud_data else None
                 }, status=status.HTTP_200_OK)
                 
         except (ValidationError, PermissionDenied, LimitExceeded) as e:
@@ -673,3 +726,133 @@ class HandleInternalTransaction(APIView):
         except Exception as e:
             logger.exception(f"Internal transfer error for transaction: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class HandleTransactionHistory(APIView):
+    
+    permission_classes = [IsAuthenticated, IsCustomer]
+    
+    def get(self, request, account_number):
+        user = request.user
+        
+        # Get and validate account
+        account = get_object_or_404(Account, account_number=account_number)
+        
+        try:
+            authorize_user(user, account)
+        except PermissionDenied as e:
+            return Response(
+                {"error": str(e)}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Build optimized query
+        # Use select_related to avoid N+1 queries
+        queryset = Transaction.objects.filter(
+            Q(source_account=account) | Q(destination_account=account)
+        ).select_related(
+            'source_account',
+            'destination_account',
+        ).only(
+            'id',
+            'transaction_ref',
+            'transaction_type',
+            'trans_status',
+            'amount',
+            'currency',
+            'fee',
+            'description',
+            'external_ref',
+            'created_at',
+            'completed_at',
+            'metadata',
+            'source_account_id',
+            'destination_account_id',
+            'source_account__account_number',
+            'destination_account__account_number',
+        ).order_by('-created_at', '-id')  # Consistent ordering
+        
+        # Apply filters
+        queryset = self._apply_filters(queryset, request)
+        
+        # Paginate results
+        paginator = CursorPagination(page_size=50, max_page_size=100)
+        results, next_cursor, previous_cursor, has_more = paginator.paginate_queryset(
+            queryset, 
+            request
+        )
+        
+        # Serialize data
+        serializer = TransactionSerializer(
+            results, 
+            many=True,
+            context={'account': account}
+        )
+        
+        response_data = {
+            'count': len(results),
+            'next': next_cursor,
+            'previous': previous_cursor,
+            'has_more': has_more,
+            'results': serializer.data,
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+    
+    def _apply_filters(self, queryset, request):
+        """Apply query filters from request parameters"""
+        
+        # Transaction type filter
+        transaction_type = request.GET.get('transaction_type')
+        if transaction_type:
+            queryset = queryset.filter(transaction_type=transaction_type)
+        
+        # Status filter
+        trans_status = request.GET.get('status')
+        if trans_status:
+            queryset = queryset.filter(trans_status=trans_status)
+        
+        # Date range filters
+        start_date = request.GET.get('start_date')
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+                queryset = queryset.filter(created_at__gte=start_dt)
+            except ValueError:
+                pass
+        
+        end_date = request.GET.get('end_date')
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+                queryset = queryset.filter(created_at__lte=end_dt)
+            except ValueError:
+                pass
+        
+        # Amount range filters
+        min_amount = request.GET.get('min_amount')
+        if min_amount:
+            try:
+                queryset = queryset.filter(amount__gte=Decimal(min_amount))
+            except (ValueError, TypeError):
+                pass
+        
+        max_amount = request.GET.get('max_amount')
+        if max_amount:
+            try:
+                queryset = queryset.filter(amount__lte=Decimal(max_amount))
+            except (ValueError, TypeError):
+                pass
+        
+        # Search in description or reference
+        search = request.GET.get('search')
+        if search:
+            queryset = queryset.filter(
+                Q(description__icontains=search) |
+                Q(transaction_ref__icontains=search) |
+                Q(external_ref__icontains=search)
+            )
+        
+        return queryset
+

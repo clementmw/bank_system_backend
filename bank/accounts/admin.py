@@ -17,3 +17,13 @@ class AccountAdmin(admin.ModelAdmin):
         if not self.account_number:
             self.account_number = generate_account_number()
             super().save(*args, **kwargs)
+
+@admin.register(AccountLimit)
+class AccountLimitsAdmin(admin.ModelAdmin):
+    list_display =[field.name for field in AccountLimit._meta.fields]
+    search_fields = ("account", "customer")
+
+@admin.register(AccountLimitOverrideRequest)
+class AccountLimitOverrideRequestAdmin(admin.ModelAdmin):
+    list_display =[field.name for field in AccountLimitOverrideRequest._meta.fields]
+    search_fields = ("account", "customer")
