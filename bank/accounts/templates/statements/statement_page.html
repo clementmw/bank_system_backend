@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @page {
+            size: A4;
+            margin: 30px 25px 80px 25px; /* Increased bottom margin */
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            position: relative;
+        }
+
+        /* WATERMARK */
+        .watermark {
+            position: fixed;
+            top: 40%;
+            left: 20%;
+            font-size: 80px;
+            color: rgba(200, 200, 200, 0.12);
+            transform: rotate(-30deg);
+            z-index: -1;
+        }
+
+        /* HEADER */
+        .header {
+            width: 100%;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000;
+            padding-bottom: 10px;
+        }
+
+        .customer-details {
+            float: left;
+            width: 55%;
+        }
+
+        .bank-details {
+            float: right;
+            width: 40%;
+            text-align: right;
+        }
+
+        .clear {
+            clear: both;
+        }
+
+        h3 {
+            margin: 5px 0;
+        }
+
+        .section-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-size: 10px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 12px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 5px;
+            text-align: right;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+
+        .left {
+            text-align: left;
+        }
+
+        .account-info {
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+
+        .summary {
+            margin-top: 15px;
+            font-weight: bold;
+            border-top: 2px solid #000;
+            padding-top: 10px;
+        }
+
+        /* FIXED FOOTER */
+        .footer {
+            position: fixed;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            font-size: 9px;
+            text-align: center;
+        }
+
+        .footer hr {
+            margin-bottom: 5px;
+        }
+
+        .page-break {
+            page-break-after: always;
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- WATERMARK -->
+<div class="watermark">
+    CONFIDENTIAL
+</div>
+
+<!-- HEADER -->
+<div class="header">
+
+    <div class="customer-details">
+        <div class="section-title">Account Holder</div>
+        <p><strong>Name:</strong> {{ customer_name }}</p>
+        <p><strong>Address:</strong> {{ address }}</p>
+        <p><strong>City:</strong> {{ city }}</p>
+        <p><strong>Country:</strong> {{ country }}</p>
+    </div>
+
+    <div class="bank-details">
+        <h3>Evergreen Bank</h3>
+        <p><strong>Official Account Statement</strong></p>
+        <p>Statement Ref: {{ statement.statement_reference }}</p>
+        <p>Statement Date: {{ statement.generated_at }}</p>
+        <p>Generated Online</p>
+    </div>
+
+    <div class="clear"></div>
+</div>
+
+<!-- ACCOUNT INFO -->
+<div class="account-info">
+    <p>
+        <strong>Account Number:</strong> {{ statement.account.account_number }} |
+        <strong>Currency:</strong> {{ statement.account.currency }}
+    </p>
+    <p>
+        <strong>Statement Period:</strong>
+        {{ statement.period_start }} - {{ statement.period_end }}
+    </p>
+</div>
+
+<!-- TRANSACTION TABLE -->
+<table>
+    <thead>
+        <tr>
+            <th class="left">Date</th>
+            <th class="left">Reference</th>
+            <th class="left">Description</th>
+            <th>Money In</th>
+            <th>Money Out</th>
+            <th>Balance</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for tx in transactions %}
+        <tr>
+            <td class="left">{{ tx.transaction_date }}</td>
+            <td class="left">{{ tx.transaction_ref }}</td>
+            <td class="left">{{ tx.description }}</td>
+            <td>{{ tx.credit }}</td>
+            <td>{{ tx.debit }}</td>
+            <td>{{ tx.running_balance }}</td>
+        </tr>
+        {% endfor %}
+    
+    <tr style="font-weight: bold; background-color: #f2f2f2; border-top: 2px solid #000;">
+        <td colspan="3" class="left">TOTAL TRANSACTIONS</td>
+        <td>{{ statement.total_credits }}</td>
+        <td>{{ statement.total_debits }}</td>
+        <td>{{ statement.closing_balance }}</td>
+    </tr>
+    </tbody>
+
+
+</table>
+
+<!-- SUMMARY -->
+{% if page_number == total_pages %}
+<div class="summary">
+    <p>Opening Balance: {{ statement.opening_balance }}</p>
+    <p>Total Credits (CR - Money In): {{ statement.total_credits }}</p>
+    <p>Total Debits (DR - Money Out): {{ statement.total_debits }}</p>
+    <p>Closing Balance: {{ statement.closing_balance }}</p>
+</div>
+{% endif %}
+
+<!-- FOOTER -->
+<div class="footer">
+    <hr>
+    Page {{ page_number }} of {{ total_pages }} |
+    Generated on {{ statement.generated_at }} <br><br>
+
+    CR = Money In | DR = Money Out <br>
+    This is a system generated statement and does not require a signature. <br>
+    Any omissions or errors must be reported within 30 days of receipt.
+</div>
+
+{% if page_number < total_pages %}
+<div class="page-break"></div>
+{% endif %}
+
+</body>
+</html>

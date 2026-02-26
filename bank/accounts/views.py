@@ -2,7 +2,7 @@ from django.shortcuts import render
 from .models import *
 from .serializers import *
 from .utility import *
-# from .tasks import *
+from .tasks import *
 from .permissions import *
 from django.http import HttpResponse
 from auth_service.models import *
@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import IsAuthenticated,BasePermission
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
@@ -19,6 +19,8 @@ from django.db.models import Q, Sum
 from decimal import Decimal
 from .metrics import *
 from .documentation import v1
+from .services import statement_service
+
 
 
 #getorcreate
@@ -717,22 +719,195 @@ class HandleAccountHold(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# task  beneficially and joint account views
+class HandleAccountStatement(APIView):
+    """
+    Handle account statement retrieval and on-demand generation.
+    Statements are immutable once created.
+    """
+
+    permission_classes = [IsAuthenticated, IsCustomer]
+
+    # ============================================
+    # GET → Retrieve existing statements
+    # ============================================
+    def get(self, request):
+        try:
+            account_number = request.query_params.get("account_number")
+            statement_type = request.query_params.get("statement_type", "MONTHLY")
+            start_date = request.query_params.get("start_date")
+            end_date = request.query_params.get("end_date")
+
+            if not account_number:
+                return Response(
+                    {"error": "Account number is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            customer = CustomerProfile.objects.get(user=request.user)
+
+            account = Account.objects.get(
+                account_number=account_number,
+                customer=customer,
+                status="ACTIVE"
+            )
+
+            filters = Q(account=account, statement_type=statement_type)
+
+            if start_date and end_date:
+                start = datetime.strptime(start_date, "%Y-%m-%d").date()
+                end = datetime.strptime(end_date, "%Y-%m-%d").date()
+                filters &= Q(period_start__gte=start, period_end__lte=end)
+
+            statements = (
+                AccountStatement.objects
+                .filter(filters)
+                .order_by("-period_end")
+            )
+
+            serializer = AccountStatementSerializer(statements, many=True)
+
+            return Response({
+                "count": statements.count(),
+                "statements": serializer.data
+            }, status=status.HTTP_200_OK)
+
+        except CustomerProfile.DoesNotExist:
+            return Response(
+                {"error": "Customer profile not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        except Account.DoesNotExist:
+            return Response(
+                {"error": "Account not found or not active"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    # ============================================
+    # POST → Generate On-Demand Statement
+    # ============================================
+    def post(self, request):
+        try:
+            account_number = request.data.get("account_number")
+            statement_type = request.data.get("statement_type", "ON_DEMAND")
+            start_date = request.data.get("start_date")
+            end_date = request.data.get("end_date")
+
+            # -----------------------------
+            # Validation
+            # -----------------------------
+            if not account_number:
+                return Response(
+                    {"error": "Account number is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not start_date or not end_date:
+                return Response(
+                    {"error": "Start date and end date are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            start = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
 
+            if start >= end:
+                return Response(
+                    {"error": "Start date must be before end date"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            if (end - start).days > 365:
+                return Response(
+                    {"error": "Date range cannot exceed 1 year"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            # -----------------------------
+            # Ownership & Account Check
+            # -----------------------------
+            customer = CustomerProfile.objects.get(user=request.user)
 
+            account = Account.objects.get(
+                account_number=account_number,
+                customer=customer,
+                status="ACTIVE"
+            )
 
+            # -----------------------------
+            # Generate Statement (race-safe)
+            # -----------------------------
+            try:
+                statement = statement_service.generate_account_statement(
+                    account=account,
+                    statement_type=statement_type,
+                    period_start=start,
+                    period_end=end,
+                    generated_by=request.user
+                )
 
+                # Trigger async PDF generation
+                generate_statement_pdf.delay(statement.id)
 
+                serializer = AccountStatementSerializer(statement)
 
+                return Response({
+                    "message": "Statement generated successfully",
+                    "statement": serializer.data
+                }, status=status.HTTP_201_CREATED)
 
+            except IntegrityError:
+                # Statement already exists (unique constraint hit)
+                existing = AccountStatement.objects.get(
+                    account=account,
+                    statement_type=statement_type,
+                    period_start=start,
+                    period_end=end
+                )
 
+                serializer = AccountStatementSerializer(existing)
 
+                return Response({
+                    "message": "Statement already exists",
+                    "statement": serializer.data
+                }, status=status.HTTP_200_OK
+                )
 
+        except CustomerProfile.DoesNotExist:
+            return Response(
+                {"error": "Customer profile not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
+        except Account.DoesNotExist:
+            return Response(
+                {"error": "Account not found or not active"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
+        except ValueError:
+            return Response(
+                {"error": "Invalid date format. Use YYYY-MM-DD"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 
@@ -800,178 +975,17 @@ class HandleAccountHold(APIView):
 
 
 
-# class HandleAccountStatement(APIView):
-#     """
-#     Handle account statement retrieval and generation
-#     """
-#     permission_classes = [IsAuthenticated, IsCustomer]  
 
-#     def get(self, request):
-#         try:
-#             # Get query parameters (not request.data for GET)
-#             account_number = request.query_params.get('account_number')
-#             statement_type = request.query_params.get('statement_type', 'MONTHLY')
-#             start_date = request.query_params.get('start_date')
-#             end_date = request.query_params.get('end_date')
 
-#             # Validation
-#             if not account_number:
-#                 return Response(
-#                     {"error": "Account number is required"}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-
-#             # Get customer and account
-#             customer = CustomerProfile.objects.get(user=request.user)
-#             account = Account.objects.get(
-#                 account_number=account_number, 
-#                 customer=customer,
-#                 status='ACTIVE'
-#             )
-
-#             # Build query filters
-#             filters = Q(account=account, statement_type=statement_type)
-            
-#             if start_date and end_date:
-#                 # Parse dates
-#                 start = datetime.strptime(start_date, '%Y-%m-%d').date()
-#                 end = datetime.strptime(end_date, '%Y-%m-%d').date()
-#                 filters &= Q(period_start__gte=start, period_end__lte=end)
-
-#             # Get statements
-#             statements = AccountStatement.objects.filter(filters).order_by('-period_end')
-
-#             serializer = AccountStatementSerializer(statements, many=True)
-#             return Response({
-#                 "count": statements.count(),
-#                 "statements": serializer.data
-#             }, status=status.HTTP_200_OK)
-
-#         except CustomerProfile.DoesNotExist:
-#             return Response(
-#                 {"error": "Customer profile not found"}, 
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-#         except Account.DoesNotExist:
-#             return Response(
-#                 {"error": "Account not found or not active"}, 
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-#         except ValueError as e:
-#             return Response(
-#                 {"error": f"Invalid date format. Use YYYY-MM-DD: {str(e)}"}, 
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-#         except Exception as e:
-#             return Response(
-#                 {"error": f"An error occurred: {str(e)}"}, 
-#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
-
-#     def post(self, request):
-#         """
-#         POST method for generating new statement on-demand
-#         """
-#         try:
-#             data = request.data
-#             account_number = data.get('account_number')
-#             statement_type = data.get('statement_type', 'ON_DEMAND')
-#             start_date = data.get('start_date')
-#             end_date = data.get('end_date')
-
-#             # Validation
-#             if not account_number:
-#                 return Response(
-#                     {"error": "Account number is required"}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-
-#             if not start_date or not end_date:
-#                 return Response(
-#                     {"error": "Start date and end date are required"}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-
-#             # Parse dates
-#             start = datetime.strptime(start_date, '%Y-%m-%d').date()
-#             end = datetime.strptime(end_date, '%Y-%m-%d').date()
-
-#             # Validate date range
-#             if start >= end:
-#                 return Response(
-#                     {"error": "Start date must be before end date"}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-
-#             # Max 1 year range for on-demand statements
-#             if (end - start).days > 365:
-#                 return Response(
-#                     {"error": "Date range cannot exceed 1 year"}, 
-#                     status=status.HTTP_400_BAD_REQUEST
-#                 )
-
-#             # Get customer and account
-#             customer = CustomerProfile.objects.get(user=request.user)
-#             account = Account.objects.get(
-#                 account_number=account_number, 
-#                 customer=customer,
-#                 status='ACTIVE'
-#             )
-
-#             # Check if statement already exists
-#             existing = AccountStatement.objects.filter(
-#                 account=account,
-#                 statement_type=statement_type,
-#                 period_start=start,
-#                 period_end=end
-#             ).first()
-
-#             if existing:
-#                 # Return existing statement
-#                 serializer = AccountStatementSerializer(existing)
-#                 return Response({
-#                     "message": "Statement already exists",
-#                     "statement": serializer.data
-#                 }, status=status.HTTP_200_OK)
-
-#             # Generate new statement
-#             statement = generate_account_statement(
-#                 account=account,
-#                 statement_type=statement_type,
-#                 period_start=start,
-#                 period_end=end,
-#                 generated_by=request.user
-#             )
-
-#             # Trigger PDF generation in background
-#             generate_statement_pdf.delay(statement.id)
-
-#             serializer = AccountStatementSerializer(statement)
-#             return Response({
-#                 "message": "Statement generated successfully",
-#                 "statement": serializer.data
-#             }, status=status.HTTP_201_CREATED)
-
-#         except CustomerProfile.DoesNotExist:
-#             return Response(
-#                 {"error": "Customer profile not found"}, 
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-#         except Account.DoesNotExist:
-#             return Response(
-#                 {"error": "Account not found or not active"}, 
-#                 status=status.HTTP_404_NOT_FOUND
-#             )
-#         except ValueError as e:
-#             return Response(
-#                 {"error": f"Invalid date format. Use YYYY-MM-DD: {str(e)}"}, 
-#                 status=status.HTTP_400_BAD_REQUEST
-#             )
-#         except Exception as e:
-#             return Response(
-#                 {"error": f"An error occurred: {str(e)}"}, 
-#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
+
+
+
+
+
+
+
+
+
 
 
 

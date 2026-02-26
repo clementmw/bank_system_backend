@@ -20,6 +20,7 @@ urlpatterns = [
     path('mpesa-stk-push/', initiate_stk_push, name='mpesa-stk-push'),
     path('stk-callback/', safaricom_stk_callback, name='safaricom-callback'),
     path('b2c-callback/', safaricom_b2c_callback, name='safaricom-callback'),
+    path('statement/', HandleAccountStatement.as_view(), name='account-statements'),
 
 
 

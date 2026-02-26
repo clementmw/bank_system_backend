@@ -12,6 +12,7 @@ staticfiles/
 *.sqlite3
 product_images/
 migrations/
+media/
 
 
 .vscode/      

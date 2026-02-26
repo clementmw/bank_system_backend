@@ -490,3 +490,35 @@ class BeneficiaryAccount(BaseModel):
         permissions = [
             ("can_manage_beneficiaries", "Can manage beneficiary accounts"),
         ]
+
+class StatementTransaction(models.Model):
+    """
+    Immutable snapshot of transactions at the time of statement generation.
+    """
+
+    statement = models.ForeignKey(
+        AccountStatement,
+        on_delete=models.CASCADE,
+        related_name="statement_transactions"
+    )
+
+    transaction = models.ForeignKey(
+        'transactions.Transaction',
+        on_delete=models.PROTECT  # prevent deletion of original transaction
+    )
+
+    # Frozen snapshot fields
+    transaction_date = models.DateTimeField()
+    transaction_ref = models.CharField(max_length=100)
+    description = models.TextField(null=True, blank=True)
+
+    debit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    credit = models.DecimalField(max_digits=15, decimal_places=2, default=Decimal('0.00'))
+    running_balance = models.DecimalField(max_digits=15, decimal_places=2)
+
+    class Meta:
+        db_table = "statement_transaction"
+        indexes = [
+            models.Index(fields=["statement"]),
+            models.Index(fields=["transaction_date"]),
+        ]
