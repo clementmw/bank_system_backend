@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Welcome aboard, {user} 🎉</h2>
+        <p>We're excited to have you here. Here's what you can do next:</p>
+        <ul>
+            <li><strong>Complete your profile</strong> - Add more details about yourself</li>
+            <li><strong>Explore features</strong> - Discover what we have to offer</li>
+            <li><strong>Get started</strong> - Begin using our services</li>
+        </ul>
+        <a href="{settings.FRONTEND_URL}/dashboard" 
+            style="display: inline-block; padding: 12px 24px; background-color: #28a745; 
+                    color: white; text-decoration: none; border-radius: 5px; margin: 20px 0;">
+            Go to Dashboard
+        </a>
+        <p style="margin-top: 30px;">
+            If you have any questions, feel free to reach out to our support team.
+        </p>
+        <p style="color: #999; font-size: 12px;">
+            Best regards,<br>
+            The {settings.SITE_NAME} Team
+        </p>
+    </body>
+</html>

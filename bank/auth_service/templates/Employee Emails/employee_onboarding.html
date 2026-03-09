@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+    <body style="font-family: Arial, sans-serif; padding: 20px;">
+        <h2>Welcome to {settings.COMPANY_NAME}, {employee.user.first_name}! 🎊</h2>
+        <p>We're thrilled to have you join our team as <strong>{employee.position}</strong>.</p>
+        
+        <h3>Getting Started:</h3>
+        <ul>
+            <li>Your employee ID: <strong>{employee.employee_id}</strong></li>
+            <li>Department: <strong>{employee.department}</strong></li>
+            <li>Start Date: <strong>{employee.start_date.strftime('%B %d, %Y')}</strong></li>
+        </ul>
+        
+        <h3>Next Steps:</h3>
+        <ol>
+            <li>Complete your employee profile</li>
+            <li>Set up your workspace access</li>
+            <li>Review company policies</li>
+            <li>Schedule your orientation session</li>
+        </ol>
+        
+        <a href="{settings.FRONTEND_URL}/employee/portal" 
+            style="display: inline-block; padding: 12px 24px; background-color: #28a745; 
+                    color: white; text-decoration: none; border-radius: 5px; margin: 20px 0;">
+            Access Employee Portal
+        </a>
+        
+        <p style="margin-top: 30px;">
+            Your manager, {employee.manager.get_full_name()}, will be reaching out soon.
+        </p>
+        
+        <p style="color: #999; font-size: 12px;">
+            Welcome to the team!<br>
+            HR Department
+        </p>
+    </body>
+</html>

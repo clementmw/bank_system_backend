@@ -23,7 +23,7 @@ from django.db.models import Q
 from django.utils.decorators import method_decorator
 from django.template.loader import render_to_string
 from django.template import TemplateDoesNotExist
-from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password,make_password
 from accounts.models import Account
 from django.contrib.auth.models import update_last_login
 
@@ -72,7 +72,9 @@ def serialize_full_user(user):
     
     return user_data
 
-
+class IsCustomer(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.role and request.user.role.role_name == "Customer"
 
 class RegisterView(APIView):
 
@@ -134,7 +136,7 @@ class RegisterView(APIView):
                     logger.info(f"New user registered: {email} with role {role.role_name}")
 
                     # trigger email verification task
-                    send_verification_email(user.id)
+                    send_verification_email.delay(user.id,request.headers.get('Origin'))
                     
                     return Response(
                         {
@@ -182,6 +184,27 @@ class VerifyEmailView(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+class ResendVerificationToken(APIView):
+    def post(self,request):
+        try:
+            data = request.data
+            email = data.get('email').lower()
+            if not email:
+                return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user = User.objects.get(email__iexact=email)
+            if not user:
+                # ignore and pass
+                return Response({"message": "Verification email sent"}, status=status.HTTP_404_NOT_FOUND)
+            
+            if not user.is_active:
+                send_verification_email.delay(user.id, request.headers.get('Origin'))
+                return Response({"message": "Verification email sent"}, status=status.HTTP_200_OK)
+            
+            return Response({"message": "Verification email already sent"}, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class CustomerLoginView(APIView):
 
@@ -231,14 +254,46 @@ class CustomerLoginView(APIView):
         
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
 class HandleSecurityQuestions(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsCustomer]
 
     def post(self, request):
-        pass
+        user = request.user
+        data = request.data
+        answers = data.get('security_question', [])
 
+        logger.info(f"answers passed {answers}")
 
+        try:
+            with transaction.atomic():
+                for item in answers:
+                    question_id = item.get("question_id")
+                    answer = item.get('answer')
+
+                    if not question_id or not answer:
+                        return Response(
+                            {"error": "question and answer are required"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
+                    question = SecurityQuestion.objects.get(id=question_id)
+
+                    CustomerSecurityInformation.objects.create(
+                        user=user,
+                        question=question,
+                        security_answer_hash=make_password(answer.lower().strip())
+                    )
+
+                return Response({
+                    "message": "security answers saved successfully"
+                })
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 class ForgetpasswordView(APIView):
     # @method_decorator(ratelimit(key='post:email', rate='10/m', method='POST'))
     def post(self, request):
@@ -316,59 +371,99 @@ class ConfirmOtpView(APIView):
 
 
 class ResetPasswordView(APIView):
+
     def post(self, request):
         try:
             data = request.data
-            # print(data)
-            security_question = data.get('question')
-            security_answer = data.get('answer')
-            # account_number = data.get('account_number')
-            # card_expirey = data.get('card_expiry')
-            otp = data.get('otp')
+
+            email = data.get("email", "").lower()
+            otp = data.get("otp")
+            answers = data.get("answers", [])
             password = data.get("password")
-            email = request.data.get('email', '').lower()
 
-            if not otp:
-                raise AuthenticationFailed("OTP is required")
+            if not email or not otp:
+                return Response(
+                    {"error": "Email and OTP are required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            user = User.objects.filter(otp=otp, email=email).first()
+            user = User.objects.filter(email=email, otp=otp).first()
 
             if not user:
-                return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # step 1 : confirm security question and respective answer
-            if security_question and security_answer:
-                security_info = CustomerSecurityInformation.objects.filter(user=user).first()
-
-                if not security_info:
-                    return Response({"error": "Security information not found"}, status=status.HTTP_404_NOT_FOUND)
-
-                if not check_password(security_answer, security_info.security_answer_hash):
-                    return Response({"error": "Invalid security answer"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "Invalid OTP"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             if not user.is_otp_valid():
-                return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "OTP has expired"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            if not answers:
+                return Response(
+                    {"error": "Security answers required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            correct_answers = 0
+
+            for item in answers:
+                question_id = item.get("question_id")
+                answer = item.get("answer")
+
+                if not question_id or not answer:
+                    continue
+
+                security_info = CustomerSecurityInformation.objects.filter(
+                    user=user,
+                    question_id=question_id
+                ).first()
+
+                if security_info and check_password(
+                    answer.lower().strip(),
+                    security_info.security_answer_hash
+                ):
+                    correct_answers += 1
+
+            # Require at least 2 correct answers
+            if correct_answers < 2:
+                return Response(
+                    {"error": "Security verification failed"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
             if not password:
-                return Response({"error": "New password is required"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": "New password required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            # validate password before reset
             password_error = validate_password_strength(password)
             if not password_error[0]:
-                return Response({"error": password_error[1]}, status=status.HTTP_400_BAD_REQUEST)
-            
+                return Response(
+                    {"error": password_error[1]},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-            user.set_password(password)
-            user.otp = None
-            user.otp_expiry = None
-            user.save()
+            with transaction.atomic():
+                user.set_password(password)
+                user.otp = None
+                user.otp_expiry = None
+                user.save()
 
-            return Response({'message': 'Password has been reset successfully'}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "Password reset successfully"},
+                status=status.HTTP_200_OK
+            )
 
-        except User.DoesNotExist:
-            return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 class HandleKYC(APIView):
     permission_classes = [IsAuthenticated]
 

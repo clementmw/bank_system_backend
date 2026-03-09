@@ -62,4 +62,9 @@ class RoleAdmin(admin.ModelAdmin):
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
     list_display = [field.name for field in Department._meta.fields]
-
+@admin.register(CustomerSecurityInformation)
+class CustomerSecurityAdmin(admin.ModelAdmin):
+    list_display = [field.name for field in CustomerSecurityInformation._meta.fields]
+@admin.register(SecurityQuestion)
+class SecurityQuestionsAdmin(admin.ModelAdmin):
+        list_display = [field.name for field in SecurityQuestion._meta.fields]

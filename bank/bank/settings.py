@@ -227,8 +227,8 @@ SIMPLE_JWT = {
 
 FRONTEND_URL = "localhost:3000"
 
-CELERY_BROKER_URL = f"{config('CELERY_BROKER_URL')}"  # DB 1 for Celery tasks
-CELERY_RESULT_BACKEND = f"{config('CELERY_BROKER_URL')}"  # Same DB for results
+CELERY_BROKER_URL = config('CELERY_BROKER_URL')  # RabbitMQ
+CELERY_RESULT_BACKEND = config('REDIS_URL')  # Redis for results
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -236,9 +236,21 @@ CELERY_TIMEZONE = 'UTC'
 CELERY_BROKER_CONNECTION_RETRY = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_MAX_RETRIES = 10
-CELERY_TASK_TRACK_STARTED = True  # Useful for progress tracking
+CELERY_TASK_TRACK_STARTED = True
 CELERYD_MAX_MEMORY_PER_CHILD = 100000  # 100MB
 CELERYD_MAX_TASKS_PER_CHILD = 50
+
+from kombu import Queue
+
+CELERY_TASK_QUEUES = (
+    Queue("high", routing_key="high"),
+    Queue("medium", routing_key="medium"),
+    Queue("low", routing_key="low"),
+    Queue("dead_letter", routing_key="dead_letter"),
+)
+
+CELERY_TASK_DEFAULT_QUEUE = "low"
+CELERY_TASK_DEFAULT_ROUTING_KEY = "low"
 
 
 SPECTACULAR_SETTINGS = {
@@ -250,24 +262,59 @@ SPECTACULAR_SETTINGS = {
     # OTHER SETTINGS
 }
 
+from auth_service.utility import LevelFilter
+import logging
+
 LOGGING = {
     "version": 1,
-    "disable_existing_loggers": False,  
-    "handlers": {
-        "file": {
-            "level": "DEBUG",
-            "class": "logging.FileHandler",
-            "filename": "debug.log",
+    "disable_existing_loggers": False,
+
+    "filters": {
+        "info_only": {
+            "()": LevelFilter,
+            "level": logging.INFO,
+        },
+        "warning_only": {
+            "()": LevelFilter,
+            "level": logging.WARNING,
+        },
+        "error_only": {
+            "()": LevelFilter,
+            "level": logging.ERROR,
         },
     },
-    "loggers": {
-        "transactions": { 
-            "handlers": ["file"],
-            "level": "DEBUG",
-            "propagate": False,
+
+    "handlers": {
+        "info_file": {
+            "class": "logging.FileHandler",
+            "filename": "info.log",
+            "level": "INFO",
+            "filters": ["info_only"],
         },
+        "warning_file": {
+            "class": "logging.FileHandler",
+            "filename": "warning.log",
+            "level": "WARNING",
+            "filters": ["warning_only"],
+        },
+        "error_file": {
+            "class": "logging.FileHandler",
+            "filename": "error.log",
+            "level": "ERROR",
+            "filters": ["error_only"],
+        },
+    },
+
+    "root": {
+        "level": "DEBUG",
+        "handlers": [
+            "info_file",
+            "warning_file",
+            "error_file",
+        ],
     },
 }
+
 
 MPESA_ENVIRONMENT = 'sandbox'
 MPESA_CONSUMER_KEY = config("MPESA_CONSUMER_KEY")
@@ -314,3 +361,10 @@ CORS_ORIGIN_WHITELIST = [
     "196.201.212.69"
     
 ]
+
+EMAIL_BACKEND = config("EMAIL_BACKEND")
+EMAIL_HOST = config("EMAIL_HOST")
+EMAIL_PORT = config("EMAIL_PORT")
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD")

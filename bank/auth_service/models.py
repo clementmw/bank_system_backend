@@ -197,6 +197,8 @@ class CustomerProfile(BaseModel):
     phone_number = models.CharField(max_length=20, unique=True)
     national_id = models.CharField(max_length=20, null=True,blank=True) #updated during kyc 
     address = models.TextField(blank=True, null=True)
+    country = models.CharField(max_length=100, null=True, blank=True)
+    city = models.CharField(max_length=100, null=True, blank=True)
     date_of_birth = models.DateField(null=True, blank=True)
     next_of_kin_name = models.CharField(max_length=100, null=True, blank=True)
     next_of_kin_contact = models.CharField(max_length=20, null=True, blank=True)
@@ -230,14 +232,16 @@ class CustomerProfile(BaseModel):
 
         unique_together = ('user', 'customer_id')
 
+class SecurityQuestion(BaseModel):
+    question = models.CharField(max_length=255, unique=True)
 
+    def __str__(self):
+        return self.question
 class CustomerSecurityInformation(BaseModel):
-    """
-    contains information for 2fa during signup 
-    """
-    user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='security_information')
-    security_question = models.CharField(max_length=255)
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='security_information')
+    question= models.ForeignKey(SecurityQuestion, on_delete=models.CASCADE)
     security_answer_hash = EncryptedTextField(max_length=255) 
+
 
     def __str__(self):
         return f"Security Info for {self.user.email}"

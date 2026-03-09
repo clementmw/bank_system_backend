@@ -728,7 +728,11 @@ class HandleInternalTransaction(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
+# scenario we need to handle money reversal
+# scenario we need to handle 2 factor authentication during payment transaction 
+# scenario we need to add description to the transaction 
+# scenario we need to put a load balances and distribute the load to the diffrent apps
+# scenario we need to add live foreign exchange api(coop api or kcb api)
 class HandleTransactionHistory(APIView):
     
     permission_classes = [IsAuthenticated, IsCustomer]
@@ -855,4 +859,6 @@ class HandleTransactionHistory(APIView):
             )
         
         return queryset
+
+
 
