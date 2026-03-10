@@ -12,7 +12,7 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 cron_descriptor==2.0.6
-cryptography==46.0.3
+cryptography==46.0.5
 cssselect2==0.8.0
 Django==5.2.11
 django-allauth==65.13.0
