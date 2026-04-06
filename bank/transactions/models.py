@@ -236,7 +236,6 @@ class BatchTransferItem(BaseModel):
         COMPLETED = 'COMPLETED', 'Completed'
         FAILED = 'FAILED', 'Failed'
 
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch = models.ForeignKey(BatchTransfer, on_delete=models.CASCADE, related_name='items')
     destination_account = models.ForeignKey('accounts.Account', on_delete=models.PROTECT, related_name='batch_transfer_items')
     amount = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
