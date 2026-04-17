@@ -20,7 +20,7 @@ class UserAdmin(GuardedModelAdmin):
     
     list_display = [field.name for field in User._meta.fields]
     search_fields = ("email",)
-    ordering = ("email",)
+    ordering = ("-last_login","-created_at",)
 
     def save_model(self, request, obj, form, change):
         # If password was manually entered, hash it
@@ -34,12 +34,17 @@ admin.site.register(User, UserAdmin)
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
     list_display = [field.name for field in EmployeeProfile._meta.fields]
-
+    ordering = ("-created_at",)
     # generate employee id
     def save_model(self, request, obj, form, change):
         if not obj.employee_id:
             obj.employee_id = generate_employee_id()
         super().save_model(request, obj, form, change)
+
+@admin.register(EmployeeCompensation)
+class EmployeeCompensationAdmin(admin.ModelAdmin):
+    list_display = [field.name for field in EmployeeCompensation._meta.fields]
+    ordering = ('-created_at',)
 
 @admin.register(CustomerProfile)
 class CustomerProfileAdmin(admin.ModelAdmin):

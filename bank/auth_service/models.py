@@ -6,8 +6,7 @@ from datetime import timedelta
 from .utility import *
 from django.contrib.contenttypes.models import ContentType
 import secrets
-from encrypted_model_fields.fields import EncryptedTextField
-
+from encrypted_model_fields.fields import EncryptedTextField,EncryptedCharField
 
 
 
@@ -74,7 +73,8 @@ class User(AbstractUser,BaseModel):
     otp_expiry = models.DateTimeField(blank=True, null=True)
     email_verification_token = models.CharField(max_length=64, blank=True, null=True)
     email_verification_expiry = models.DateTimeField(blank=True, null=True)
-    password = models.CharField(max_length=128)  
+    password = models.CharField(max_length=128) 
+
 
 
  
@@ -157,18 +157,34 @@ class EmployeeProfile(BaseModel):
         ('CONTRACT', 'Contract'),
         ('INTERN', 'Intern'),
     )
+    employee_status_choices = (
+        ('ACTIVE', 'Active'),
+        ('ON_LEAVE', 'On Leave'),
+        ('TERMINATED', 'Terminated'),
+        ('RESIGNED', 'Resigned'),
+    )
     user = models.OneToOneField('User', on_delete=models.CASCADE, related_name='employee_profile')
     employee_id = models.CharField(max_length=20, unique=True)
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='employees')
     employment_type  = models.CharField(max_length=20, choices=employment_type_choices, default='FULL_TIME')
+    employee_status = models.CharField(max_length=20, choices=employee_status_choices, default='ACTIVE')
     job_title = models.CharField(max_length=100)
     date_of_hire = models.DateField(null=True, blank=True)
     date_of_termination = models.DateField(null=True, blank=True)
     phone_number = models.CharField(max_length=20, unique=True)
     emergency_contact_name = models.CharField(max_length=100, null=True, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, null=True, blank=True)
+    emergency_contact_relationship = models.CharField(max_length=20,null=True,blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    national_id = models.CharField(max_length=20, null=True, blank=True) #updated during kyc
+    kra_pin = models.CharField(max_length=20, null=True, blank=True) #updated during kyc
+    gender = models.CharField(max_length=10, choices=[('MALE', 'Male'), ('FEMALE', 'Female')], null=True, blank=True)
+    city = models.CharField(max_length=100, blank=True, null=True)
+    country = models.CharField(max_length=100, blank=True, null=True)
+    work_location = models.CharField(max_length=100, blank=True, null=True)
     is_active_employee = models.BooleanField(default=True)
     address = models.TextField(blank=True, null=True)
+    profile_image = models.ImageField(upload_to='employee_images/', blank=True, null=True)
     created_by = models.ForeignKey('User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_employees') #later used foraudit trail
 
 
@@ -185,6 +201,33 @@ class EmployeeProfile(BaseModel):
         ]
         
         unique_together = ('user', 'employee_id')
+
+class EmployeeCompensation(BaseModel):
+    employee = models.OneToOneField(
+        EmployeeProfile, on_delete=models.CASCADE,
+        related_name='compensation'
+    )
+    salary = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=5, default='KES')
+    pay_frequency = models.CharField(max_length=20, default='MONTHLY', choices=[
+        ('MONTHLY', 'Monthly'), ('BI_WEEKLY', 'Bi-weekly'),
+        ('WEEKLY', 'Weekly'),   ('DAILY', 'Daily'),
+    ])
+    allowances      = models.TextField(blank=True, null=True)
+    bank_name       = EncryptedCharField(max_length=100, blank=True, null=True)
+    account_number  = EncryptedCharField(max_length=50, blank=True, null=True)
+    effective_date  = models.DateField(null=True, blank=True)  # when this salary took effect
+    updated_by      = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='compensation_updates'
+    )
+
+    class Meta:
+        permissions = [
+            ("can_view_compensation", "Can view employee compensation"),
+            ("can_manage_compensation", "Can manage employee compensation"),
+        ]
+
 class CustomerProfile(BaseModel):
     customer_tier_choices = (
         ('STANDARD','Standard'),

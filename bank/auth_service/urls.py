@@ -22,8 +22,9 @@ urlpatterns = [
     path('login/staff/', StaffLoginView.as_view(), name='staff login'),
     path('logout/staff/', StaffLogoutView.as_view(), name='staff logout'),
     path('employee/creation/', HandleEmployeeAccount.as_view(), name='employee account creation'),
-    path('employee/manage/<str:id>/', ManageEmployeeAccount.as_view(), name='manage employees'),
-    path('employee/kyc/review/', KYCReviewView.as_view(), name='kyc review')
+    path('employee/manage/<str:emp_id>/', ManageEmployeeAccount.as_view(), name='manage employees'),
+    path('employee/kyc/review/', KYCReviewView.as_view(), name='kyc review'),
+    path('audit/logs/<str:user_id>/', AuditLogEmployeesView.as_view(), name='audit logs'),
     
 
 

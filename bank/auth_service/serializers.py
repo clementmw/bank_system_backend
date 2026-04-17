@@ -27,19 +27,32 @@ class EmployeeProfileSerializer(serializers.ModelSerializer):
     department = serializers.SerializerMethodField()
     class Meta:
         model = EmployeeProfile
-        fields = '__all__'
+        fields = ['id','user','employee_id','department','employment_type','job_title','date_of_hire']
     
     def get_user(self, obj):
         return {
             "first_name": obj.user.first_name,
             "last_name": obj.user.last_name,
             "email": obj.user.email,
-            "role": obj.user.role.role_name if obj.user.role else None
         }
     def get_department(self, obj):
         return {
             "name": obj.department.name if obj.department else None
         }
+
+class EmployeeCompensationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmployeeCompensation
+        fields = '__all__'
+
+
+class EmployeeData(serializers.ModelSerializer):
+    compensation = EmployeeCompensationSerializer(read_only=True)
+
+    class Meta:
+        model = EmployeeProfile
+        fields = '__all__'
+
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -67,4 +80,9 @@ class KycProfileSerializer(serializers.ModelSerializer):
             'verified_by_email', 'review_notes', 'documents',
             'created_at', 'updated_at'
         ]
-    
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = '__all__'
+
