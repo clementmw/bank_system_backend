@@ -40,7 +40,8 @@ def serialize_full_user(user):
     user_data = UserSerializer(user).data
     
     # Get the role name from the ForeignKey relationship
-    role_name = user.role.role_name  
+    role_name = user.role.category  
+    logger.info(f"Serializing user: {user.email} with role: {role_name}")
     
     # Map role names to their respective profile serializers
     profile_serializers = {
@@ -228,7 +229,7 @@ class CustomerLoginView(APIView):
                                     status=status.HTTP_401_UNAUTHORIZED)
 
                 if user.role.category != "Customer":
-                    return Response({"error": "Access denied. Not a customer."}, #change to a more generic response 
+                    return Response({"error": "Invalid email or password"}, #change to a more generic response 
                                     status=status.HTTP_403_FORBIDDEN)
 
                 if not user.is_active:
@@ -370,7 +371,7 @@ class ConfirmOtpView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-class ResetPasswordView(APIView):
+class ResetPasswordView(APIView): #to inegrate and test 
 
     def post(self, request):
         try:
@@ -773,7 +774,7 @@ class HandleEmployeeAccount(APIView):
             if employment_type:
                 get_employees = get_employees.filter(employment_type=employment_type)
             if department:
-                get_employees = get_employees.filter(department__department_name=department)
+                get_employees = get_employees.filter(department__name=department)
 
             if search:
                 get_employees = get_employees.filter(
@@ -792,87 +793,133 @@ class HandleEmployeeAccount(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def post(self, request):     
-
+    def post(self, request):
         data = request.data
-        email = data.get("email").lower()
+        logger.info(f"Received request to create employee account: {data}")
+        email = data.get("email", "").lower()
         password = generate_temporary_password()
         first_name = data.get("first_name")
         last_name = data.get("last_name")
-        role_name = data.get("role_name")  # e.g., "STAFF", "ADMIN"
-        # department_name = data.get("department_name")  # e.g., "HR", "IT"
+        role_name = data.get("role_name")
+        salary = data.get("salary")
         phone_number = data.get("phone_number")
         address = data.get("address")
-        employment_type = data.get("employment_type")  # e.g., "FULL_TIME", "PART_TIME"
+        employment_type = data.get("employment_type")
         job_title = data.get("job_title")
         date_of_hire = data.get("date_of_hire")
-        emergecy_person = data.get('contact_name')
-        emergency_contact = data.get('emergency_contact')
+        emergency_contact_name = data.get("contact_name")       
+        emergency_contact = data.get("emergency_contact")
+        emergency_contact_relationship = data.get("relationship")  
+        allowances = data.get("allowances")                     
+        bank_name = data.get("bank_name")
+        account_number = data.get("account_number")
+        frequency = data.get("pay_frequency")                   
+        effective_date = data.get("effective_date")
+        currency = data.get("currency", "KES")
 
-        if not email or not password or not role_name:
-            return Response({"error": "Email, password, and role are required"}, status=status.HTTP_400_BAD_REQUEST)
+        # Fields to store on EmployeeProfile
+        national_id = data.get("national_id")
+        gender = data.get("gender")
+        date_of_birth = data.get("date_of_birth")
+        city = data.get("city")
+        country = data.get("country")
+        work_location = data.get("work_location")
+        department_name = data.get("department")                
 
-        
+        if not email or not role_name:
+            return Response(
+                {"error": "Email and role are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
             try:
                 role = Role.objects.get(role_name=role_name)
             except Role.DoesNotExist:
-                return Response({"error": f"Role '{role_name}' does not exist"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response(
+                    {"error": f"Role '{role_name}' does not exist"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
             with transaction.atomic():
                 serializer = UserSerializer(data={
                     "email": email,
                     "password": password,
                     "first_name": first_name,
                     "last_name": last_name,
-                    "role": role.id
+                    "role": role.id,
                 })
-                if serializer.is_valid():
-                    user = serializer.save()
-                    user.is_active = True  # Employees are active by default
-                    user.is_staff = True  # Employees are staff by default switch up later for spec
-                    user.save()
+                if not serializer.is_valid():
+                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-                    # get department based on role name
+                user = serializer.save()
+                user.is_active = True
+                user.is_staff = True
+                user.save()
 
-                    # Create EmployeeProfile
-                    new_employee = EmployeeProfile.objects.create(
-                        user=user,
-                        employee_id=generate_employee_id(),
-                        phone_number=phone_number,
-                        address=address,
-                        employment_type=employment_type,
-                        job_title=job_title,
-                        date_of_hire=date_of_hire,
-                        emergency_contact_name = emergecy_person,
-                        emergency_contact_phone = emergency_contact
-                    )
-                    department = Role.objects.get(role_name=role_name).department_name
-                    if department:
-                        dept_obj= Department.objects.get(name=department)
+                import json
+                allowances_str = json.dumps(allowances) if isinstance(allowances, dict) else (allowances or "")
+
+                new_employee = EmployeeProfile.objects.create(
+                    user=user,
+                    employee_id=generate_employee_id(),
+                    phone_number=phone_number,
+                    address=address,
+                    employment_type=employment_type,
+                    job_title=job_title,
+                    date_of_hire=date_of_hire,
+                    emergency_contact_name=emergency_contact_name,
+                    emergency_contact_phone=emergency_contact,
+                    emergency_contact_relationship=emergency_contact_relationship,
+                    national_id=national_id,
+                    gender=gender,
+                    date_of_birth=date_of_birth,
+                    city=city,
+                    country=country,
+                    work_location=work_location,
+                    created_by=request.user,
+                )
+
+                EmployeeCompensation.objects.get_or_create(
+                    employee=new_employee,
+                    defaults={
+                        "salary": salary,
+                        "currency": currency,
+                        "pay_frequency": frequency,
+                        "allowances": allowances_str,
+                        "bank_name": bank_name,
+                        "account_number": account_number,
+                        "effective_date": effective_date,
+                        "updated_by": request.user,
+                    },
+                )
+
+                dept_source = department_name or (
+                    str(role.department_name) if role.department_name else None
+                )
+                if dept_source:
+                    try:
+                        dept_obj = Department.objects.get(name=dept_source)
                         new_employee.department = dept_obj
                         new_employee.save()
-                    #send the email to the employee
-                    # try:
-                    #     send_employee_onboarding_email.delay(new_employee.id)
-                    # except Exception as e:
-                    #     logger.error(f"Failed to send onboarding email to {email}: {str(e)}")
+                    except Department.DoesNotExist:
+                        logger.warning(f"Department '{dept_source}' not found, skipping assignment.")
 
-                    logger.info(f"New employee account created: {email} with role {role.role_name}")
+                logger.info(f"New employee created: {email}, role: {role.role_name}")
+                return Response(
+                    {
+                        "message": "Employee account created successfully",
+                        "employee_id": new_employee.employee_id,
+                        "role": user.role.role_name,
+                        "temporary_password": password,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
 
-                    return Response(
-                        {
-                            'message': 'Employee account created successfully',
-                            'employee_id': new_employee.employee_id,
-                            'role': user.role.role_name,
-                            'temporary_password': password,
-                            # 'user': serialize_full_user(user)
-                         },
-                        status=status.HTTP_201_CREATED)
-                else:
-                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
         except Exception as e:
-            return Response ({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error creating employee for {email}: {str(e)}")
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)    
+
 
 
 #tasks 1, delete/update employee 2. review kyc to allow customeer to access dashboards
@@ -880,28 +927,40 @@ class HandleEmployeeAccount(APIView):
 class ManageEmployeeAccount(APIView):
     permission_classes = [IsAuthenticated, EmployeeAccessPermission]
 
-    def patch(self,request,id):
+    def get(self,request,emp_id):
+        try:
+            user = request.user
+            employee = get_object_or_404(EmployeeProfile, id=emp_id)
+            if not employee:
+                return Response({"error":"employee data not found"}, status=status.HTTP_404_NOT_FOUND)
+            
+            serializer  = EmployeeData(employee)
+            return Response({
+                "data":serializer.data
+            }, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({"error":str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def patch(self,request,emp_id):
 
         user = request.user
 
-        print(user.id)
 
         data = request.data
         first_name = data.get("first_name")
         last_name = data.get("last_name")
         role_name = data.get("role_name")
 
-
-
       
         try:
-            employee = get_object_or_404(EmployeeProfile,id=id)
+            employee = get_object_or_404(EmployeeProfile,id=emp_id)
 
             # is user id is not in the employee
             if user.id == employee.user.id:
                 return Response({"error": "You cannot modify your own account"}, status=status.HTTP_403_FORBIDDEN)
 
-            serializer = EmployeeProfileSerializer(employee, data=request.data, partial=True)
+            serializer = EmployeeData(employee, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
 
@@ -932,9 +991,9 @@ class ManageEmployeeAccount(APIView):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def delete(self,request,id):
+    def delete(self,request,emp_id):
         try:
-            employee = EmployeeProfile.objects.get(id=id)
+            employee = EmployeeProfile.objects.get(id=emp_id)
             user = employee.user
             user.is_active = False  # Soft delete by deactivating the user
             user.save()
@@ -1047,3 +1106,30 @@ class KYCReviewView(APIView):
                 reviewed_by=reviewed_by,
                 reviewed_at=timezone.now()
             )
+
+
+class AuditLogEmployeesView(APIView):
+    permission_classes = [IsAuthenticated, EmployeeAccessPermission]
+
+    def get(self, request,user_id):
+        try:
+            audit_logs = AuditLog.objects.filter(user_id=user_id).order_by('-timestamp')
+            
+            if not audit_logs:
+                return Response(
+                    {"message": "No audit logs found for this user"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # paginator = CustomPagination()
+            # paginated_logs = paginator.paginate_queryset(audit_logs, request)
+            serializer = AuditLogSerializer(audit_logs, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            logger.error(f"Error fetching audit logs for user {user_id}: {str(e)}")
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+       
